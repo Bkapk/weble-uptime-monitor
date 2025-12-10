@@ -44,8 +44,6 @@ module.exports = async (req, res) => {
 
   try {
     const { id } = req.query;
-    console.log(`🔍 POST /api/monitors/${id}/check`);
-    
     const prisma = await connectToDatabase();
     
     const monitor = await prisma.monitor.findUnique({ where: { id } });
@@ -85,8 +83,6 @@ module.exports = async (req, res) => {
       }
     });
     
-    console.log(`✅ Checked: ${monitor.name} - ${result.status}`);
-    
     // Transform response to match frontend types
     const transformed = {
       ...updated,
@@ -96,7 +92,7 @@ module.exports = async (req, res) => {
     
     return res.status(200).json(transformed);
   } catch (error) {
-    console.error('❌ Error in check-monitor:', error.message);
+    console.error('Error in check-monitor:', error.message);
     return res.status(500).json({ error: 'Failed to check monitor' });
   }
 };

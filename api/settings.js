@@ -33,18 +33,14 @@ module.exports = async (req, res) => {
 
     // GET /api/settings
     if (req.method === 'GET') {
-      console.log('📥 GET /api/settings');
-      
       let settings = await prisma.settings.findUnique({ where: { id: 'global' } });
       
       if (!settings) {
         settings = await prisma.settings.create({
           data: { id: 'global', globalInterval: 3600 }
         });
-        console.log('✅ Created default settings');
       }
       
-      console.log(`✅ Settings: interval = ${settings.globalInterval}s`);
       return res.status(200).json(settings);
     }
 
@@ -52,7 +48,6 @@ module.exports = async (req, res) => {
     if (req.method === 'PATCH') {
       const body = await parseBody(req);
       const { globalInterval } = body;
-      console.log(`⚙️  PATCH /api/settings - New interval: ${globalInterval}s`);
       
       if (globalInterval === undefined || globalInterval < 10) {
         return res.status(400).json({ error: 'Invalid interval (must be >= 10 seconds)' });
@@ -64,13 +59,12 @@ module.exports = async (req, res) => {
         create: { id: 'global', globalInterval }
       });
       
-      console.log(`✅ Interval updated to ${globalInterval}s`);
       return res.status(200).json({ success: true, globalInterval: settings.globalInterval });
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
-    console.error('❌ Error in /api/settings:', error.message);
+    console.error('Error in /api/settings:', error.message);
     return res.status(500).json({ error: 'Server error', message: error.message });
   }
 };

@@ -35,9 +35,8 @@ module.exports = async (req, res) => {
 
     // GET /api/monitors
     if (req.method === 'GET') {
-      console.log('📥 GET /api/monitors');
       const monitors = await prisma.monitor.findMany({
-        orderBy: { createdAt: 'desc' }
+        orderBy: { createdAt: 'asc' } // Keep original order (oldest first)
       });
       
       // Transform Prisma data to match frontend types
@@ -50,14 +49,11 @@ module.exports = async (req, res) => {
           : (typeof monitor.history === 'string' ? JSON.parse(monitor.history) : [])
       }));
       
-      console.log(`✅ Found ${monitors.length} monitor(s)`);
       return res.status(200).json(transformedMonitors);
     }
 
     // POST /api/monitors
     if (req.method === 'POST') {
-      console.log('📥 POST /api/monitors - Adding monitors');
-      
       const body = await parseBody(req);
       const { urls } = body;
       if (!urls) {
@@ -65,7 +61,6 @@ module.exports = async (req, res) => {
       }
 
       const urlList = urls.split('\n').map(l => l.trim()).filter(l => l);
-      console.log(`📝 Processing ${urlList.length} URL(s)`);
       
       const newMonitors = urlList.map(url => {
         let cleanUrl = url;
@@ -86,19 +81,17 @@ module.exports = async (req, res) => {
       });
 
       if (newMonitors.length > 0) {
-        const created = await prisma.monitor.createMany({
+        await prisma.monitor.createMany({
           data: newMonitors
         });
-        console.log(`✅ Added ${created.count} monitor(s)`);
       }
       
-      // Return the created monitors
+      // Return the created monitors in order they were added
       const createdMonitors = await prisma.monitor.findMany({
         where: {
           url: { in: newMonitors.map(m => m.url) }
         },
-        orderBy: { createdAt: 'desc' },
-        take: newMonitors.length
+        orderBy: { createdAt: 'asc' }
       });
       
       return res.status(200).json(createdMonitors);
@@ -106,8 +99,7 @@ module.exports = async (req, res) => {
 
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
-    console.error('❌ Error in /api/monitors:', error.message);
-    console.error('Full error:', error);
+    console.error('Error in /api/monitors:', error.message);
     return res.status(500).json({ 
       error: 'Server error',
       message: error.message 

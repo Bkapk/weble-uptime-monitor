@@ -5,15 +5,13 @@ let prisma = null;
 
 function getPrismaClient() {
   if (!prisma) {
-    console.log('🔄 Initializing Prisma Client...');
-    
     prisma = new PrismaClient({
-      log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+      log: ['error'],
     });
 
     // Handle connection errors
     prisma.$connect().catch((error) => {
-      console.error('❌ Prisma connection failed:', error.message);
+      console.error('Prisma connection failed:', error.message);
       throw error;
     });
   }
@@ -28,16 +26,10 @@ async function connectToDatabase() {
     
     // Test the connection
     await client.$queryRaw`SELECT 1`;
-    console.log('✅ Prisma database connected');
     
     return client;
   } catch (error) {
-    console.error('❌ Database connection failed:', error.message);
-    console.error('Error details:', {
-      name: error.name,
-      code: error.code,
-      stack: error.stack
-    });
+    console.error('Database connection failed:', error.message);
     throw error;
   }
 }

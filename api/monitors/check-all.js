@@ -43,15 +43,11 @@ module.exports = async (req, res) => {
   }
 
   try {
-    console.log('🔄 POST /api/monitors/check-all');
-    
     const prisma = await connectToDatabase();
     
     const monitors = await prisma.monitor.findMany({
       where: { isPaused: false }
     });
-    
-    console.log(`📊 Checking ${monitors.length} monitor(s)`);
     
     let checkedCount = 0;
     const maxConcurrent = 5; // Check 5 at a time to avoid overwhelming the server
@@ -63,7 +59,6 @@ module.exports = async (req, res) => {
       // Check batch in parallel
       await Promise.all(batch.map(async (monitor) => {
         try {
-          console.log(`🔍 Checking: ${monitor.name}`);
           const result = await checkMonitor(monitor);
           
           // Parse existing history - handle both array and JSON string
@@ -96,10 +91,9 @@ module.exports = async (req, res) => {
             }
           });
           
-          console.log(`✅ ${monitor.name}: ${result.status} (${result.latency}ms)`);
           checkedCount++;
         } catch (err) {
-          console.error(`❌ Error checking ${monitor.name}:`, err.message);
+          console.error(`Error checking ${monitor.name}:`, err.message);
         }
       }));
       
@@ -109,16 +103,13 @@ module.exports = async (req, res) => {
       }
     }
     
-    console.log(`✅ Check complete: ${checkedCount}/${monitors.length}`);
-    
     return res.status(200).json({ 
       success: true, 
       checked: checkedCount,
       total: monitors.length
     });
   } catch (error) {
-    console.error('❌ Error in check-all:', error.message);
-    console.error('Full error:', error);
+    console.error('Error in check-all:', error.message);
     return res.status(500).json({ 
       error: 'Failed to check monitors',
       message: error.message 

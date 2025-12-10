@@ -91,53 +91,86 @@ const App: React.FC = () => {
 
   // Auto-check monitors based on global interval
   useEffect(() => {
-    if (!isAuthenticated || !globalInterval) return;
+    if (!isAuthenticated || !globalInterval || monitors.length === 0) return;
     
     let checkInterval: NodeJS.Timeout;
-    let lastCheckTime = 0;
+    let isChecking = false;
     
     const autoCheck = async () => {
+      // Prevent multiple simultaneous checks
+      if (isChecking) {
+        console.log('⏸️ Auto-check already in progress, skipping...');
+        return;
+      }
+      
       const now = Date.now();
       const intervalMs = globalInterval * 1000;
-      
-      // Check if enough time has passed since last check
-      if (now - lastCheckTime < intervalMs) return;
       
       // Find monitors that need checking
       const monitorsToCheck = monitors.filter(m => {
         if (m.isPaused) return false;
         
         // Always check PENDING monitors
-        if (m.status === MonitorStatus.PENDING) return true;
+        if (m.status === MonitorStatus.PENDING) {
+          return true;
+        }
         
         // Check if enough time has passed for other monitors
         const lastChecked = m.lastChecked || 0;
-        return (now - lastChecked) >= intervalMs;
+        const timeSinceLastCheck = now - lastChecked;
+        
+        // Check if it's time (with 10 second tolerance to account for polling delay)
+        const needsCheck = timeSinceLastCheck >= (intervalMs - 10000);
+        
+        if (needsCheck) {
+          console.log(`⏰ Monitor "${m.name}" needs check: ${Math.round(timeSinceLastCheck / 1000)}s since last check (interval: ${globalInterval}s)`);
+        }
+        
+        return needsCheck;
       });
       
       if (monitorsToCheck.length > 0) {
-        console.log(`🔄 Auto-checking ${monitorsToCheck.length} monitor(s)`);
+        isChecking = true;
+        console.log(`🔄 Auto-checking ${monitorsToCheck.length} monitor(s) (interval: ${globalInterval}s)`);
         try {
           await checkAllMonitors();
-          lastCheckTime = now;
+          console.log(`✅ Auto-check completed for ${monitorsToCheck.length} monitor(s)`);
         } catch (e) {
-          console.error('Auto-check failed:', e);
+          console.error('❌ Auto-check failed:', e);
+        } finally {
+          isChecking = false;
+        }
+      } else {
+        // Log when no monitors need checking (only every 5th check to avoid spam)
+        if (Math.random() < 0.2) {
+          console.log(`✓ No monitors need checking yet (interval: ${globalInterval}s)`);
         }
       }
     };
     
-    // Check every minute if monitors need checking
-    checkInterval = setInterval(autoCheck, 60000);
+    // Check every 10 seconds to catch monitors that need checking
+    // This ensures we don't miss the check window even with short intervals
+    const pollInterval = Math.min(10000, Math.max(5000, globalInterval * 1000 / 6)); // Check at least 6 times per interval, min 5s, max 10s
+    console.log(`⏱️ Auto-check polling every ${pollInterval / 1000}s (global interval: ${globalInterval}s)`);
+    checkInterval = setInterval(autoCheck, pollInterval);
     
     // Also check immediately on mount if there are PENDING monitors
     const pendingMonitors = monitors.filter(m => m.status === MonitorStatus.PENDING && !m.isPaused);
     if (pendingMonitors.length > 0) {
+      console.log(`🚀 Found ${pendingMonitors.length} PENDING monitor(s), will check in 2s...`);
       setTimeout(() => {
-        checkAllMonitors().catch(console.error);
+        autoCheck();
       }, 2000);
     }
     
+    // Also run an initial check after a short delay
+    setTimeout(() => {
+      console.log('🔍 Running initial auto-check...');
+      autoCheck();
+    }, 5000);
+    
     return () => {
+      console.log('🛑 Stopping auto-check interval');
       clearInterval(checkInterval);
     };
   }, [isAuthenticated, globalInterval, monitors]);

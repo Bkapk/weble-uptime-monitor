@@ -2,7 +2,7 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Sentinel Monitor - Website Uptime Monitor
+# Weble Uptime - Website Uptime Monitor
 
 A modern, real-time website uptime monitoring application built with React, TypeScript, and Express.js. Monitor multiple websites simultaneously, track latency, receive alerts, and visualize performance metrics.
 

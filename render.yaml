@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: sentinel-monitor
+    name: weble-uptime-monitor
     env: node
     buildCommand: npm install && npm run build
     startCommand: npm start

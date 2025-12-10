@@ -29,6 +29,14 @@ export const triggerManualCheck = async (id: string): Promise<void> => {
   await fetch(`${API_BASE}/monitors/${id}/check`, { method: 'POST' });
 };
 
+export const updateMonitor = async (id: string, url: string, interval: number): Promise<void> => {
+  await fetch(`${API_BASE}/monitors/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, interval })
+  });
+};
+
 // Browser notifications for when the user has the tab open
 export const sendBrowserNotification = (title: string, body: string) => {
   if (!("Notification" in window)) return;

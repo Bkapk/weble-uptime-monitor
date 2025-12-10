@@ -1,7 +1,7 @@
 import React from 'react';
 import { Monitor, MonitorStatus, LatencyPoint } from '../types';
 import { STATUS_COLORS, STATUS_BG_COLORS, MAX_HISTORY_LENGTH } from '../constants';
-import { Globe, Clock, Trash2, Pause, Play, ExternalLink, RefreshCw, Hash } from 'lucide-react';
+import { Globe, Clock, Trash2, Pause, Play, ExternalLink, RefreshCw, Hash, Edit } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer, YAxis } from 'recharts';
 
 interface MonitorCardProps {
@@ -9,9 +9,10 @@ interface MonitorCardProps {
   onRemove: (id: string) => void;
   onTogglePause: (id: string) => void;
   onManualCheck: (id: string) => void;
+  onEdit: (monitor: Monitor) => void;
 }
 
-const MonitorCard: React.FC<MonitorCardProps> = ({ monitor, onRemove, onTogglePause, onManualCheck }) => {
+const MonitorCard: React.FC<MonitorCardProps> = ({ monitor, onRemove, onTogglePause, onManualCheck, onEdit }) => {
   const statusColor = STATUS_COLORS[monitor.status];
   const cardBgColor = STATUS_BG_COLORS[monitor.status];
   
@@ -109,6 +110,13 @@ const MonitorCard: React.FC<MonitorCardProps> = ({ monitor, onRemove, onTogglePa
             title="Check Now"
           >
             <RefreshCw size={14} />
+          </button>
+          <button 
+            onClick={() => onEdit(monitor)}
+            className="p-1.5 hover:bg-slate-700 rounded text-slate-300 transition-colors"
+            title="Edit Monitor"
+          >
+            <Edit size={14} />
           </button>
           <button 
             onClick={() => onTogglePause(monitor.id)}

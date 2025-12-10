@@ -7,17 +7,34 @@ import {
   deleteMonitor, 
   toggleMonitorPause, 
   triggerManualCheck,
+  updateMonitor,
   requestNotificationPermission 
 } from './services/monitorService';
 import StatsOverview from './components/StatsOverview';
 import MonitorCard from './components/MonitorCard';
 import AddMonitorModal from './components/AddMonitorModal';
+import EditMonitorModal from './components/EditMonitorModal';
+import PasswordModal from './components/PasswordModal';
 
 const App: React.FC = () => {
   const [monitors, setMonitors] = useState<Monitor[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingMonitor, setEditingMonitor] = useState<Monitor | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [isServerConnected, setIsServerConnected] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Check authentication on mount
+  useEffect(() => {
+    const checkAuth = () => {
+      const authCookie = document.cookie.split(';').find(c => c.trim().startsWith('weble_auth='));
+      if (authCookie && authCookie.split('=')[1] === 'true') {
+        setIsAuthenticated(true);
+      }
+    };
+    checkAuth();
+  }, []);
 
   // Check notification permission on mount
   useEffect(() => {
@@ -26,8 +43,10 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Sync Data Loop
+  // Sync Data Loop (only when authenticated)
   useEffect(() => {
+    if (!isAuthenticated) return;
+    
     let isMounted = true;
     const syncData = async () => {
       try {
@@ -50,7 +69,7 @@ const App: React.FC = () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [isAuthenticated]);
 
   const handleEnableNotifications = async () => {
     const granted = await requestNotificationPermission();
@@ -84,6 +103,34 @@ const App: React.FC = () => {
     await triggerManualCheck(id);
   };
 
+  const handleEdit = (monitor: Monitor) => {
+    setEditingMonitor(monitor);
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async (id: string, url: string, interval: number) => {
+    try {
+      await updateMonitor(id, url, interval);
+      const updated = await fetchMonitors();
+      setMonitors(updated);
+    } catch (e) {
+      console.error("Failed to update monitor", e);
+      setIsServerConnected(false);
+    }
+  };
+
+  const handlePasswordSubmit = (password: string) => {
+    if (password === 'Weble2024.') {
+      setIsAuthenticated(true);
+      // Set cookie that expires in 7 days
+      const expires = new Date();
+      expires.setTime(expires.getTime() + (7 * 24 * 60 * 60 * 1000));
+      document.cookie = `weble_auth=true; expires=${expires.toUTCString()}; path=/`;
+      return true;
+    }
+    return false;
+  };
+
   // Calculated Stats
   const stats: Stats = useMemo(() => {
     const active = monitors.filter(m => !m.isPaused && m.status !== MonitorStatus.PENDING);
@@ -98,6 +145,11 @@ const App: React.FC = () => {
     };
   }, [monitors]);
 
+  // Show password modal if not authenticated
+  if (!isAuthenticated) {
+    return <PasswordModal onSubmit={handlePasswordSubmit} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-200 selection:bg-blue-500/30">
       {/* Header */}
@@ -108,7 +160,7 @@ const App: React.FC = () => {
               <ShieldCheck className="w-6 h-6 text-white" />
             </div>
             <h1 className="text-xl font-bold tracking-tight text-white">
-              Sentinel <span className="text-blue-500">Monitor</span>
+              Weble <span className="text-blue-500">Uptime</span>
             </h1>
             {!isServerConnected && (
               <span className="ml-4 px-3 py-1 bg-red-500/10 text-red-500 text-xs font-bold rounded-full border border-red-500/20 animate-pulse flex items-center gap-1">
@@ -166,6 +218,7 @@ const App: React.FC = () => {
                 onRemove={handleRemove}
                 onTogglePause={handleTogglePause}
                 onManualCheck={handleManualCheck}
+                onEdit={handleEdit}
               />
             ))}
           </div>
@@ -176,6 +229,16 @@ const App: React.FC = () => {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onAdd={handleAddMonitors}
+      />
+
+      <EditMonitorModal
+        isOpen={isEditModalOpen}
+        monitor={editingMonitor}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditingMonitor(null);
+        }}
+        onSave={handleSaveEdit}
       />
     </div>
   );

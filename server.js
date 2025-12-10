@@ -60,7 +60,7 @@ async function checkMonitor(monitor) {
     const response = await fetch(monitor.url, { 
       method: 'HEAD', 
       signal: controller.signal,
-      headers: { 'User-Agent': 'SentinelMonitor/1.0' }
+      headers: { 'User-Agent': 'WebleUptime/1.0' }
     });
     
     clearTimeout(timeoutId);
@@ -176,6 +176,27 @@ app.patch('/api/monitors/:id/toggle', (req, res) => {
   }
 });
 
+app.patch('/api/monitors/:id', (req, res) => {
+  const monitor = monitors.find(m => m.id === req.params.id);
+  if (monitor) {
+    const { url, interval } = req.body;
+    if (url) {
+      let cleanUrl = url;
+      if (!/^https?:\/\//i.test(url)) cleanUrl = `https://${url}`;
+      monitor.url = cleanUrl;
+      monitor.name = cleanUrl.replace(/^https?:\/\//i, '').split('/')[0];
+    }
+    if (interval !== undefined) {
+      monitor.interval = interval;
+    }
+    monitor.status = 'PENDING'; // Reset status to check with new settings
+    saveData();
+    res.json(monitor);
+  } else {
+    res.status(404).json({ error: 'Monitor not found' });
+  }
+});
+
 app.delete('/api/monitors/:id', (req, res) => {
   monitors = monitors.filter(m => m.id !== req.params.id);
   saveData();
@@ -209,6 +230,6 @@ app.get('*', (req, res) => {
 // Start Server
 loadData();
 app.listen(PORT, () => {
-  console.log(`Sentinel Backend running on port ${PORT}`);
+  console.log(`Weble Uptime Backend running on port ${PORT}`);
   console.log(`Background monitoring active...`);
 });

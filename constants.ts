@@ -1,6 +1,6 @@
 export const DEFAULT_CHECK_INTERVAL = 60; // seconds
 export const MAX_HISTORY_LENGTH = 30;
-export const LOCAL_STORAGE_KEY = 'sentinel_monitors_v1';
+export const LOCAL_STORAGE_KEY = 'weble_uptime_monitors_v1';
 
 // Colors for status
 export const STATUS_COLORS = {

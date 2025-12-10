@@ -11,7 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // We'll test the server logic by creating a test server instance
-describe('Sentinel Monitor API', () => {
+describe('Weble Uptime API', () => {
   let app;
   let testDataFile;
   let monitors;

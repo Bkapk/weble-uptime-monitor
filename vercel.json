@@ -2,10 +2,6 @@
   "version": 2,
   "builds": [
     {
-      "src": "server.js",
-      "use": "@vercel/node"
-    },
-    {
       "src": "package.json",
       "use": "@vercel/static-build",
       "config": {
@@ -13,21 +9,16 @@
       }
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "server.js"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/dist/$1"
-    },
-    {
-      "src": "/",
-      "dest": "/dist/index.html"
+      "source": "/api/:path*",
+      "destination": "/api/index.js"
     }
   ],
-  "env": {
-    "MONGODB_URI": "@mongodb_uri"
-  }
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ]
 }

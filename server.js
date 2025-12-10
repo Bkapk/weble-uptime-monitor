@@ -212,7 +212,7 @@ async function checkMonitor(monitor) {
   }
 }
 
-// Sequential checking queue
+// Sequential checking queue (only for local dev, not serverless)
 let checkQueue = [];
 let isChecking = false;
 
@@ -258,33 +258,36 @@ async function processCheckQueue() {
   isChecking = false;
 }
 
-// The Heartbeat Loop - Sequential checking
-setInterval(async () => {
-  try {
-    const monitors = await getAllMonitors();
-    const settings = await getSettings();
-    const now = Date.now();
-    const globalIntervalMs = settings.globalInterval * 1000;
-    
-    for (const monitor of monitors) {
-      if (monitor.isPaused) continue;
+// The Heartbeat Loop - Only run in local/development mode
+// Vercel serverless functions can't run background tasks
+if (process.env.VERCEL !== '1' && process.env.NODE_ENV !== 'production') {
+  setInterval(async () => {
+    try {
+      const monitors = await getAllMonitors();
+      const settings = await getSettings();
+      const now = Date.now();
+      const globalIntervalMs = settings.globalInterval * 1000;
       
-      const lastChecked = monitor.lastChecked || 0;
-      
-      if (now - lastChecked >= globalIntervalMs) {
-        // Add to queue if not already there
-        if (!checkQueue.includes(monitor.id)) {
-          checkQueue.push(monitor.id);
+      for (const monitor of monitors) {
+        if (monitor.isPaused) continue;
+        
+        const lastChecked = monitor.lastChecked || 0;
+        
+        if (now - lastChecked >= globalIntervalMs) {
+          if (!checkQueue.includes(monitor.id)) {
+            checkQueue.push(monitor.id);
+          }
         }
       }
+      
+      processCheckQueue();
+    } catch (err) {
+      console.error('Error in heartbeat loop:', err);
     }
-    
-    // Process the queue
-    processCheckQueue();
-  } catch (err) {
-    console.error('Error in heartbeat loop:', err);
-  }
-}, 5000); // Check every 5 seconds
+  }, 5000);
+  
+  console.log('📊 Background monitoring active (local mode)');
+}
 
 // --- API Routes ---
 
@@ -419,29 +422,45 @@ app.post('/api/monitors/:id/check', async (req, res) => {
   }
 });
 
-// Check all monitors endpoint
+// Check all monitors endpoint - works on serverless
 app.post('/api/monitors/check-all', async (req, res) => {
   try {
+    await ensureDBConnection();
     const monitors = await getAllMonitors();
     const activeMonitors = monitors.filter(m => !m.isPaused);
     
-    // Add all to queue
-    for (const monitor of activeMonitors) {
-      if (!checkQueue.includes(monitor.id)) {
-        checkQueue.push(monitor.id);
+    // On Vercel (serverless), check monitors immediately and sequentially
+    let checkedCount = 0;
+    for (const monitor of activeMonitors.slice(0, 5)) { // Limit to 5 to avoid timeout
+      try {
+        const result = await checkMonitor(monitor);
+        monitor.status = result.status;
+        monitor.statusCode = result.statusCode;
+        monitor.latency = result.latency;
+        monitor.lastChecked = Date.now();
+        
+        if (!monitor.history) monitor.history = [];
+        monitor.history.push({ timestamp: Date.now(), latency: result.latency });
+        if (monitor.history.length > MAX_HISTORY) {
+          monitor.history.shift();
+        }
+        
+        await saveMonitor(monitor);
+        checkedCount++;
+      } catch (err) {
+        console.error(`Error checking ${monitor.name}:`, err);
       }
     }
     
-    processCheckQueue();
-    
     res.json({ 
       success: true, 
-      message: `Checking ${activeMonitors.length} monitor(s)`,
-      queued: activeMonitors.length 
+      message: `Checked ${checkedCount} monitor(s)`,
+      checked: checkedCount,
+      total: activeMonitors.length
     });
   } catch (err) {
     console.error('Error in POST /api/monitors/check-all:', err);
-    res.status(500).json({ error: 'Failed to queue checks' });
+    res.status(500).json({ error: 'Failed to check monitors' });
   }
 });
 

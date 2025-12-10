@@ -21,11 +21,25 @@ const MonitorCard: React.FC<MonitorCardProps> = ({ monitor, onRemove, onTogglePa
     latency: h.latency
   }));
 
-  const formatLastChecked = (timestamp: number | null) => {
+  const formatLastChecked = (timestamp: number | Date | null | undefined) => {
     if (!timestamp) return 'Never';
-    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    
+    // Handle Date object from Prisma
+    const timestampMs = timestamp instanceof Date ? timestamp.getTime() : timestamp;
+    if (!timestampMs || isNaN(timestampMs)) return 'Never';
+    
+    const seconds = Math.floor((Date.now() - timestampMs) / 1000);
+    if (seconds < 0) return 'Just now';
     if (seconds < 60) return `${seconds}s ago`;
-    return `${Math.floor(seconds / 60)}m ago`;
+    
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
   };
 
   const getStatusCodeColor = (code: number | undefined) => {
@@ -99,7 +113,7 @@ const MonitorCard: React.FC<MonitorCardProps> = ({ monitor, onRemove, onTogglePa
           ) : null}
           <span className="flex items-center gap-1" title="Last Checked">
             <RefreshCw size={12} className={monitor.status === MonitorStatus.PENDING ? "animate-spin" : ""} />
-            {formatLastChecked(monitor.lastChecked)}
+            {formatLastChecked(monitor.lastChecked ? (typeof monitor.lastChecked === 'string' ? new Date(monitor.lastChecked) : monitor.lastChecked) : null)}
           </span>
         </div>
         

@@ -89,6 +89,59 @@ const App: React.FC = () => {
     };
   }, [isAuthenticated]);
 
+  // Auto-check monitors based on global interval
+  useEffect(() => {
+    if (!isAuthenticated || !globalInterval) return;
+    
+    let checkInterval: NodeJS.Timeout;
+    let lastCheckTime = 0;
+    
+    const autoCheck = async () => {
+      const now = Date.now();
+      const intervalMs = globalInterval * 1000;
+      
+      // Check if enough time has passed since last check
+      if (now - lastCheckTime < intervalMs) return;
+      
+      // Find monitors that need checking
+      const monitorsToCheck = monitors.filter(m => {
+        if (m.isPaused) return false;
+        
+        // Always check PENDING monitors
+        if (m.status === MonitorStatus.PENDING) return true;
+        
+        // Check if enough time has passed for other monitors
+        const lastChecked = m.lastChecked || 0;
+        return (now - lastChecked) >= intervalMs;
+      });
+      
+      if (monitorsToCheck.length > 0) {
+        console.log(`🔄 Auto-checking ${monitorsToCheck.length} monitor(s)`);
+        try {
+          await checkAllMonitors();
+          lastCheckTime = now;
+        } catch (e) {
+          console.error('Auto-check failed:', e);
+        }
+      }
+    };
+    
+    // Check every minute if monitors need checking
+    checkInterval = setInterval(autoCheck, 60000);
+    
+    // Also check immediately on mount if there are PENDING monitors
+    const pendingMonitors = monitors.filter(m => m.status === MonitorStatus.PENDING && !m.isPaused);
+    if (pendingMonitors.length > 0) {
+      setTimeout(() => {
+        checkAllMonitors().catch(console.error);
+      }, 2000);
+    }
+    
+    return () => {
+      clearInterval(checkInterval);
+    };
+  }, [isAuthenticated, globalInterval, monitors]);
+
   const handleEnableNotifications = async () => {
     const granted = await requestNotificationPermission();
     setNotificationsEnabled(granted);

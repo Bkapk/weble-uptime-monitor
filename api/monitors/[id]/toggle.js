@@ -30,7 +30,15 @@ module.exports = async (req, res) => {
     });
     
     console.log(`✅ Toggled monitor: ${id} - isPaused: ${updated.isPaused}`);
-    return res.status(200).json(updated);
+    
+    // Transform response to match frontend types
+    const transformed = {
+      ...updated,
+      lastChecked: updated.lastChecked ? updated.lastChecked.getTime() : null,
+      history: Array.isArray(updated.history) ? updated.history : []
+    };
+    
+    return res.status(200).json(transformed);
   } catch (error) {
     console.error('❌ Error in toggle-monitor:', error.message);
     return res.status(500).json({ error: 'Failed to toggle monitor' });

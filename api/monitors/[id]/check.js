@@ -55,8 +55,20 @@ module.exports = async (req, res) => {
     
     const result = await checkMonitor(monitor);
     
-    // Parse existing history
-    let history = Array.isArray(monitor.history) ? monitor.history : [];
+    // Parse existing history - handle both array and JSON string
+    let history = [];
+    if (monitor.history) {
+      if (Array.isArray(monitor.history)) {
+        history = monitor.history;
+      } else if (typeof monitor.history === 'string') {
+        try {
+          history = JSON.parse(monitor.history);
+        } catch (e) {
+          history = [];
+        }
+      }
+    }
+    
     history.push({ timestamp: Date.now(), latency: result.latency });
     if (history.length > 30) {
       history.shift();
@@ -74,7 +86,15 @@ module.exports = async (req, res) => {
     });
     
     console.log(`✅ Checked: ${monitor.name} - ${result.status}`);
-    return res.status(200).json(updated);
+    
+    // Transform response to match frontend types
+    const transformed = {
+      ...updated,
+      lastChecked: updated.lastChecked ? updated.lastChecked.getTime() : null,
+      history: Array.isArray(updated.history) ? updated.history : []
+    };
+    
+    return res.status(200).json(transformed);
   } catch (error) {
     console.error('❌ Error in check-monitor:', error.message);
     return res.status(500).json({ error: 'Failed to check monitor' });

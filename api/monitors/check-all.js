@@ -54,34 +54,58 @@ module.exports = async (req, res) => {
     console.log(`📊 Checking ${monitors.length} monitor(s)`);
     
     let checkedCount = 0;
+    const maxConcurrent = 5; // Check 5 at a time to avoid overwhelming the server
     
-    for (const monitor of monitors.slice(0, 10)) {
-      try {
-        console.log(`🔍 Checking: ${monitor.name}`);
-        const result = await checkMonitor(monitor);
-        
-        // Parse existing history
-        let history = Array.isArray(monitor.history) ? monitor.history : [];
-        history.push({ timestamp: Date.now(), latency: result.latency });
-        if (history.length > 30) {
-          history.shift();
-        }
-        
-        await prisma.monitor.update({
-          where: { id: monitor.id },
-          data: {
-            status: result.status,
-            statusCode: result.statusCode,
-            latency: result.latency,
-            lastChecked: new Date(),
-            history: history
+    // Process monitors in batches
+    for (let i = 0; i < monitors.length; i += maxConcurrent) {
+      const batch = monitors.slice(i, i + maxConcurrent);
+      
+      // Check batch in parallel
+      await Promise.all(batch.map(async (monitor) => {
+        try {
+          console.log(`🔍 Checking: ${monitor.name}`);
+          const result = await checkMonitor(monitor);
+          
+          // Parse existing history - handle both array and JSON string
+          let history = [];
+          if (monitor.history) {
+            if (Array.isArray(monitor.history)) {
+              history = monitor.history;
+            } else if (typeof monitor.history === 'string') {
+              try {
+                history = JSON.parse(monitor.history);
+              } catch (e) {
+                history = [];
+              }
+            }
           }
-        });
-        
-        console.log(`✅ ${monitor.name}: ${result.status}`);
-        checkedCount++;
-      } catch (err) {
-        console.error(`❌ Error checking ${monitor.name}:`, err.message);
+          
+          history.push({ timestamp: Date.now(), latency: result.latency });
+          if (history.length > 30) {
+            history.shift();
+          }
+          
+          await prisma.monitor.update({
+            where: { id: monitor.id },
+            data: {
+              status: result.status,
+              statusCode: result.statusCode,
+              latency: result.latency,
+              lastChecked: new Date(),
+              history: history
+            }
+          });
+          
+          console.log(`✅ ${monitor.name}: ${result.status} (${result.latency}ms)`);
+          checkedCount++;
+        } catch (err) {
+          console.error(`❌ Error checking ${monitor.name}:`, err.message);
+        }
+      }));
+      
+      // Small delay between batches to avoid rate limiting
+      if (i + maxConcurrent < monitors.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
     

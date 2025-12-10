@@ -39,8 +39,19 @@ module.exports = async (req, res) => {
       const monitors = await prisma.monitor.findMany({
         orderBy: { createdAt: 'desc' }
       });
+      
+      // Transform Prisma data to match frontend types
+      const transformedMonitors = monitors.map(monitor => ({
+        ...monitor,
+        lastChecked: monitor.lastChecked ? monitor.lastChecked.getTime() : null,
+        // Ensure history is an array
+        history: Array.isArray(monitor.history) 
+          ? monitor.history 
+          : (typeof monitor.history === 'string' ? JSON.parse(monitor.history) : [])
+      }));
+      
       console.log(`✅ Found ${monitors.length} monitor(s)`);
-      return res.status(200).json(monitors);
+      return res.status(200).json(transformedMonitors);
     }
 
     // POST /api/monitors

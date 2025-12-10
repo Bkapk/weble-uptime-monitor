@@ -59,7 +59,15 @@ module.exports = async (req, res) => {
       });
       
       console.log(`✅ Updated monitor: ${id}`);
-      return res.status(200).json(updated);
+      
+      // Transform response to match frontend types
+      const transformed = {
+        ...updated,
+        lastChecked: updated.lastChecked ? updated.lastChecked.getTime() : null,
+        history: Array.isArray(updated.history) ? updated.history : []
+      };
+      
+      return res.status(200).json(transformed);
     }
 
     // DELETE /api/monitors/:id

@@ -1,55 +1,38 @@
-// Shared database connection for Vercel serverless functions
-const { MongoClient, ServerApiVersion } = require('mongodb');
+// Prisma client for Vercel serverless functions
+const { PrismaClient } = require('@prisma/client');
 
-const MONGODB_URI = process.env.MONGODB_URI;
-const DB_NAME = 'weble_uptime';
+let prisma = null;
 
-let cachedClient = null;
-let cachedDb = null;
-
-async function connectToDatabase() {
-  // Return cached connection if available
-  if (cachedDb && cachedClient) {
-    console.log('📦 Using cached MongoDB connection');
-    return { db: cachedDb, client: cachedClient };
-  }
-
-  if (!MONGODB_URI) {
-    console.error('❌ MONGODB_URI environment variable is not set!');
-    console.error('Environment variables available:', Object.keys(process.env));
-    throw new Error('MONGODB_URI is not configured');
-  }
-
-  try {
-    console.log('🔄 Connecting to MongoDB...');
-    console.log('URI starts with:', MONGODB_URI.substring(0, 30) + '...');
+function getPrismaClient() {
+  if (!prisma) {
+    console.log('🔄 Initializing Prisma Client...');
     
-    const client = new MongoClient(MONGODB_URI, {
-      serverApi: {
-        version: ServerApiVersion.v1,
-        strict: true,
-        deprecationErrors: true,
-      },
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
+    prisma = new PrismaClient({
+      log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
     });
 
-    await client.connect();
-    console.log('✅ MongoDB client connected');
-    
-    const db = client.db(DB_NAME);
+    // Handle connection errors
+    prisma.$connect().catch((error) => {
+      console.error('❌ Prisma connection failed:', error.message);
+      throw error;
+    });
+  }
+  
+  return prisma;
+}
+
+// For Vercel serverless functions, we need to ensure the client is properly initialized
+async function connectToDatabase() {
+  try {
+    const client = getPrismaClient();
     
     // Test the connection
-    await db.command({ ping: 1 });
-    console.log('✅ MongoDB database accessible');
-
-    // Cache for reuse
-    cachedClient = client;
-    cachedDb = db;
-
-    return { db, client };
+    await client.$queryRaw`SELECT 1`;
+    console.log('✅ Prisma database connected');
+    
+    return client;
   } catch (error) {
-    console.error('❌ MongoDB connection failed:', error.message);
+    console.error('❌ Database connection failed:', error.message);
     console.error('Error details:', {
       name: error.name,
       code: error.code,
@@ -59,5 +42,4 @@ async function connectToDatabase() {
   }
 }
 
-module.exports = { connectToDatabase, DB_NAME };
-
+module.exports = { connectToDatabase, getPrismaClient };

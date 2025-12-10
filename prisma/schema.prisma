@@ -1,0 +1,34 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Monitor {
+  id          String   @id @default(uuid())
+  url         String
+  name        String
+  status      String   @default("PENDING")
+  statusCode  Int?
+  lastChecked DateTime?
+  latency     Int?
+  history     Json     @default("[]")
+  isPaused    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isPaused])
+}
+
+model Settings {
+  id            String   @id @default("global")
+  globalInterval Int      @default(3600)
+  updatedAt     DateTime @updatedAt
+}
+

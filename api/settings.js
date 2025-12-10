@@ -29,18 +29,18 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const { db } = await connectToDatabase();
-    const settingsCollection = db.collection('settings');
+    const prisma = await connectToDatabase();
 
     // GET /api/settings
     if (req.method === 'GET') {
       console.log('📥 GET /api/settings');
       
-      let settings = await settingsCollection.findOne({ _id: 'global' });
+      let settings = await prisma.settings.findUnique({ where: { id: 'global' } });
       
       if (!settings) {
-        settings = { globalInterval: 3600 };
-        await settingsCollection.insertOne({ _id: 'global', ...settings });
+        settings = await prisma.settings.create({
+          data: { id: 'global', globalInterval: 3600 }
+        });
         console.log('✅ Created default settings');
       }
       
@@ -58,14 +58,14 @@ module.exports = async (req, res) => {
         return res.status(400).json({ error: 'Invalid interval (must be >= 10 seconds)' });
       }
       
-      await settingsCollection.updateOne(
-        { _id: 'global' },
-        { $set: { globalInterval } },
-        { upsert: true }
-      );
+      const settings = await prisma.settings.upsert({
+        where: { id: 'global' },
+        update: { globalInterval },
+        create: { id: 'global', globalInterval }
+      });
       
       console.log(`✅ Interval updated to ${globalInterval}s`);
-      return res.status(200).json({ success: true, globalInterval });
+      return res.status(200).json({ success: true, globalInterval: settings.globalInterval });
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
@@ -74,4 +74,3 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Server error', message: error.message });
   }
 };
-

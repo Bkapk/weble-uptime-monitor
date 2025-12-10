@@ -46,34 +46,37 @@ module.exports = async (req, res) => {
     const { id } = req.query;
     console.log(`🔍 POST /api/monitors/${id}/check`);
     
-    const { db } = await connectToDatabase();
-    const monitorsCollection = db.collection('monitors');
+    const prisma = await connectToDatabase();
     
-    const monitor = await monitorsCollection.findOne({ id });
+    const monitor = await prisma.monitor.findUnique({ where: { id } });
     if (!monitor) {
       return res.status(404).json({ error: 'Monitor not found' });
     }
     
     const result = await checkMonitor(monitor);
     
-    monitor.status = result.status;
-    monitor.statusCode = result.statusCode;
-    monitor.latency = result.latency;
-    monitor.lastChecked = Date.now();
-    
-    if (!monitor.history) monitor.history = [];
-    monitor.history.push({ timestamp: Date.now(), latency: result.latency });
-    if (monitor.history.length > 30) {
-      monitor.history.shift();
+    // Parse existing history
+    let history = Array.isArray(monitor.history) ? monitor.history : [];
+    history.push({ timestamp: Date.now(), latency: result.latency });
+    if (history.length > 30) {
+      history.shift();
     }
     
-    await monitorsCollection.updateOne({ id }, { $set: monitor });
-    console.log(`✅ Checked: ${monitor.name} - ${result.status}`);
+    const updated = await prisma.monitor.update({
+      where: { id },
+      data: {
+        status: result.status,
+        statusCode: result.statusCode,
+        latency: result.latency,
+        lastChecked: new Date(),
+        history: history
+      }
+    });
     
-    return res.status(200).json(monitor);
+    console.log(`✅ Checked: ${monitor.name} - ${result.status}`);
+    return res.status(200).json(updated);
   } catch (error) {
     console.error('❌ Error in check-monitor:', error.message);
     return res.status(500).json({ error: 'Failed to check monitor' });
   }
 };
-

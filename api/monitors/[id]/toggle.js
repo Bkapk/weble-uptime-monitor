@@ -14,24 +14,25 @@ module.exports = async (req, res) => {
     const { id } = req.query;
     console.log(`⏸️  PATCH /api/monitors/${id}/toggle`);
     
-    const { db } = await connectToDatabase();
-    const monitorsCollection = db.collection('monitors');
+    const prisma = await connectToDatabase();
     
-    const monitor = await monitorsCollection.findOne({ id });
+    const monitor = await prisma.monitor.findUnique({ where: { id } });
     if (!monitor) {
       return res.status(404).json({ error: 'Monitor not found' });
     }
     
-    monitor.isPaused = !monitor.isPaused;
-    monitor.status = monitor.isPaused ? 'PAUSED' : 'PENDING';
+    const updated = await prisma.monitor.update({
+      where: { id },
+      data: {
+        isPaused: !monitor.isPaused,
+        status: !monitor.isPaused ? 'PAUSED' : 'PENDING'
+      }
+    });
     
-    await monitorsCollection.updateOne({ id }, { $set: monitor });
-    console.log(`✅ Toggled monitor: ${id} - isPaused: ${monitor.isPaused}`);
-    
-    return res.status(200).json(monitor);
+    console.log(`✅ Toggled monitor: ${id} - isPaused: ${updated.isPaused}`);
+    return res.status(200).json(updated);
   } catch (error) {
     console.error('❌ Error in toggle-monitor:', error.message);
     return res.status(500).json({ error: 'Failed to toggle monitor' });
   }
 };
-

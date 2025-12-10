@@ -30,38 +30,42 @@ module.exports = async (req, res) => {
 
   try {
     const { id } = req.query;
-    const { db } = await connectToDatabase();
-    const monitorsCollection = db.collection('monitors');
+    const prisma = await connectToDatabase();
 
     // PATCH /api/monitors/:id (update)
     if (req.method === 'PATCH') {
       console.log(`📝 PATCH /api/monitors/${id}`);
       
-      const monitor = await monitorsCollection.findOne({ id });
+      const monitor = await prisma.monitor.findUnique({ where: { id } });
       if (!monitor) {
         return res.status(404).json({ error: 'Monitor not found' });
       }
       
       const body = await parseBody(req);
       const { url } = body;
+      
+      let updateData = { status: 'PENDING' };
+      
       if (url) {
         let cleanUrl = url;
         if (!/^https?:\/\//i.test(url)) cleanUrl = `https://${url}`;
-        monitor.url = cleanUrl;
-        monitor.name = cleanUrl.replace(/^https?:\/\//i, '').split('/')[0];
+        updateData.url = cleanUrl;
+        updateData.name = cleanUrl.replace(/^https?:\/\//i, '').split('/')[0];
       }
       
-      monitor.status = 'PENDING';
-      await monitorsCollection.updateOne({ id }, { $set: monitor });
-      console.log(`✅ Updated monitor: ${id}`);
+      const updated = await prisma.monitor.update({
+        where: { id },
+        data: updateData
+      });
       
-      return res.status(200).json(monitor);
+      console.log(`✅ Updated monitor: ${id}`);
+      return res.status(200).json(updated);
     }
 
     // DELETE /api/monitors/:id
     if (req.method === 'DELETE') {
       console.log(`🗑️  DELETE /api/monitors/${id}`);
-      await monitorsCollection.deleteOne({ id });
+      await prisma.monitor.delete({ where: { id } });
       console.log(`✅ Deleted monitor: ${id}`);
       return res.status(200).json({ success: true });
     }
@@ -72,4 +76,3 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: 'Server error', message: error.message });
   }
 };
-

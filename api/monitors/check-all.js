@@ -45,33 +45,39 @@ module.exports = async (req, res) => {
   try {
     console.log('🔄 POST /api/monitors/check-all');
     
-    const { db } = await connectToDatabase();
-    const monitorsCollection = db.collection('monitors');
+    const prisma = await connectToDatabase();
     
-    const monitors = await monitorsCollection.find({}).toArray();
-    const activeMonitors = monitors.filter(m => !m.isPaused);
+    const monitors = await prisma.monitor.findMany({
+      where: { isPaused: false }
+    });
     
-    console.log(`📊 Checking ${activeMonitors.length} monitor(s)`);
+    console.log(`📊 Checking ${monitors.length} monitor(s)`);
     
     let checkedCount = 0;
     
-    for (const monitor of activeMonitors.slice(0, 10)) {
+    for (const monitor of monitors.slice(0, 10)) {
       try {
         console.log(`🔍 Checking: ${monitor.name}`);
         const result = await checkMonitor(monitor);
         
-        monitor.status = result.status;
-        monitor.statusCode = result.statusCode;
-        monitor.latency = result.latency;
-        monitor.lastChecked = Date.now();
-        
-        if (!monitor.history) monitor.history = [];
-        monitor.history.push({ timestamp: Date.now(), latency: result.latency });
-        if (monitor.history.length > 30) {
-          monitor.history.shift();
+        // Parse existing history
+        let history = Array.isArray(monitor.history) ? monitor.history : [];
+        history.push({ timestamp: Date.now(), latency: result.latency });
+        if (history.length > 30) {
+          history.shift();
         }
         
-        await monitorsCollection.updateOne({ id: monitor.id }, { $set: monitor });
+        await prisma.monitor.update({
+          where: { id: monitor.id },
+          data: {
+            status: result.status,
+            statusCode: result.statusCode,
+            latency: result.latency,
+            lastChecked: new Date(),
+            history: history
+          }
+        });
+        
         console.log(`✅ ${monitor.name}: ${result.status}`);
         checkedCount++;
       } catch (err) {
@@ -79,12 +85,12 @@ module.exports = async (req, res) => {
       }
     }
     
-    console.log(`✅ Check complete: ${checkedCount}/${activeMonitors.length}`);
+    console.log(`✅ Check complete: ${checkedCount}/${monitors.length}`);
     
     return res.status(200).json({ 
       success: true, 
       checked: checkedCount,
-      total: activeMonitors.length
+      total: monitors.length
     });
   } catch (error) {
     console.error('❌ Error in check-all:', error.message);
@@ -95,4 +101,3 @@ module.exports = async (req, res) => {
     });
   }
 };
-

@@ -31,13 +31,14 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const { db } = await connectToDatabase();
-    const monitorsCollection = db.collection('monitors');
+    const prisma = await connectToDatabase();
 
     // GET /api/monitors
     if (req.method === 'GET') {
       console.log('📥 GET /api/monitors');
-      const monitors = await monitorsCollection.find({}).toArray();
+      const monitors = await prisma.monitor.findMany({
+        orderBy: { createdAt: 'desc' }
+      });
       console.log(`✅ Found ${monitors.length} monitor(s)`);
       return res.status(200).json(monitors);
     }
@@ -62,7 +63,6 @@ module.exports = async (req, res) => {
         let name = cleanUrl.replace(/^https?:\/\//i, '').split('/')[0];
 
         return {
-          id: crypto.randomUUID(),
           url: cleanUrl,
           name: name,
           status: 'PENDING',
@@ -75,11 +75,22 @@ module.exports = async (req, res) => {
       });
 
       if (newMonitors.length > 0) {
-        await monitorsCollection.insertMany(newMonitors);
-        console.log(`✅ Added ${newMonitors.length} monitor(s)`);
+        const created = await prisma.monitor.createMany({
+          data: newMonitors
+        });
+        console.log(`✅ Added ${created.count} monitor(s)`);
       }
       
-      return res.status(200).json(newMonitors);
+      // Return the created monitors
+      const createdMonitors = await prisma.monitor.findMany({
+        where: {
+          url: { in: newMonitors.map(m => m.url) }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: newMonitors.length
+      });
+      
+      return res.status(200).json(createdMonitors);
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
@@ -92,4 +103,3 @@ module.exports = async (req, res) => {
     });
   }
 };
-

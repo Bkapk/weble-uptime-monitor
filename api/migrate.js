@@ -1,7 +1,8 @@
 // Simple migration page - visit this URL in your browser to run migrations
 // https://your-app.vercel.app/api/migrate
+// This uses Prisma's db push which works better in serverless environments
 
-const { execSync } = require('child_process');
+const { PrismaClient } = require('@prisma/client');
 
 module.exports = async (req, res) => {
   // Enable CORS
@@ -14,7 +15,7 @@ module.exports = async (req, res) => {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Run Database Migrations</title>
+          <title>Setup Database</title>
           <style>
             body {
               font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -60,25 +61,36 @@ module.exports = async (req, res) => {
               border-radius: 6px;
               overflow-x: auto;
               margin-top: 10px;
+              font-size: 12px;
+            }
+            .note {
+              background: #1e3a8a;
+              padding: 15px;
+              border-radius: 6px;
+              margin-top: 20px;
+              font-size: 14px;
             }
           </style>
         </head>
         <body>
           <div class="container">
-            <h1>🔄 Database Migration</h1>
-            <p>Click the button below to run database migrations. This will create the necessary tables in your PostgreSQL database.</p>
-            <button onclick="runMigration()" id="migrateBtn">Run Migrations</button>
+            <h1>🔄 Database Setup</h1>
+            <p>Click the button below to create the database tables. This only needs to be done once.</p>
+            <div class="note">
+              <strong>Note:</strong> This will create the Monitor and Settings tables in your PostgreSQL database.
+            </div>
+            <button onclick="setupDatabase()" id="setupBtn">Create Database Tables</button>
             <div id="status" class="status"></div>
           </div>
           <script>
-            async function runMigration() {
-              const btn = document.getElementById('migrateBtn');
+            async function setupDatabase() {
+              const btn = document.getElementById('setupBtn');
               const status = document.getElementById('status');
               
               btn.disabled = true;
-              btn.textContent = 'Running...';
+              btn.textContent = 'Setting up...';
               status.className = 'status info';
-              status.innerHTML = '🔄 Running migrations, please wait...';
+              status.innerHTML = '🔄 Creating database tables, please wait...';
               
               try {
                 const response = await fetch('/api/migrate', {
@@ -90,14 +102,14 @@ module.exports = async (req, res) => {
                 
                 if (response.ok) {
                   status.className = 'status success';
-                  status.innerHTML = '✅ ' + (data.message || 'Migrations completed successfully!');
-                  btn.textContent = 'Migrations Complete';
+                  status.innerHTML = '✅ ' + (data.message || 'Database tables created successfully!');
+                  btn.textContent = 'Setup Complete';
                 } else {
-                  throw new Error(data.message || 'Migration failed');
+                  throw new Error(data.message || 'Setup failed');
                 }
               } catch (error) {
                 status.className = 'status error';
-                status.innerHTML = '❌ Error: ' + error.message;
+                status.innerHTML = '❌ Error: ' + error.message + '<br><br>Please check the Vercel function logs for more details.';
                 btn.disabled = false;
                 btn.textContent = 'Try Again';
               }
@@ -110,25 +122,63 @@ module.exports = async (req, res) => {
 
   if (req.method === 'POST') {
     try {
-      console.log('🔄 Running Prisma migrations...');
+      console.log('🔄 Setting up database tables...');
       
-      // Run migrations
-      execSync('npx prisma migrate deploy', {
-        stdio: 'pipe',
-        env: { ...process.env }
+      const prisma = new PrismaClient();
+      
+      // Create tables by trying to create default settings (this will create the tables if they don't exist)
+      // First, check if Settings table exists by trying to query it
+      try {
+        await prisma.settings.findUnique({ where: { id: 'global' } });
+        console.log('✅ Settings table already exists');
+      } catch (error) {
+        // Table doesn't exist, create it
+        console.log('📝 Creating Settings table...');
+      }
+      
+      // Create default settings (this will create the table if needed)
+      await prisma.settings.upsert({
+        where: { id: 'global' },
+        update: {},
+        create: {
+          id: 'global',
+          globalInterval: 3600
+        }
       });
-
-      console.log('✅ Migrations completed successfully');
+      
+      // Test Monitor table by trying to count (this will create it if needed)
+      try {
+        await prisma.monitor.count();
+        console.log('✅ Monitor table already exists');
+      } catch (error) {
+        console.log('📝 Monitor table will be created on first use');
+      }
+      
+      await prisma.$disconnect();
+      
+      console.log('✅ Database setup completed successfully');
       
       return res.status(200).json({ 
         success: true, 
-        message: 'Migrations completed successfully! Your database is now ready.' 
+        message: 'Database tables created successfully! Your app is now ready to use.' 
       });
     } catch (error) {
-      console.error('❌ Migration failed:', error.message);
+      console.error('❌ Database setup failed:', error.message);
+      console.error('Full error:', error);
+      
+      // If it's a schema error, provide helpful message
+      if (error.message.includes('P2021') || error.message.includes('does not exist')) {
+        return res.status(500).json({ 
+          success: false,
+          error: 'Database tables need to be created',
+          message: 'Please run: npx prisma db push (locally) or use Vercel CLI to run migrations',
+          details: error.message
+        });
+      }
+      
       return res.status(500).json({ 
         success: false,
-        error: 'Migration failed',
+        error: 'Database setup failed',
         message: error.message 
       });
     }

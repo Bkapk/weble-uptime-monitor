@@ -1,5 +1,23 @@
 const { connectToDatabase } = require('./db');
 
+// Helper to parse JSON body
+function parseBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk.toString();
+    });
+    req.on('end', () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (e) {
+        reject(e);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -32,7 +50,8 @@ module.exports = async (req, res) => {
 
     // PATCH /api/settings
     if (req.method === 'PATCH') {
-      const { globalInterval } = req.body;
+      const body = await parseBody(req);
+      const { globalInterval } = body;
       console.log(`⚙️  PATCH /api/settings - New interval: ${globalInterval}s`);
       
       if (globalInterval === undefined || globalInterval < 10) {

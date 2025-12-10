@@ -1,6 +1,24 @@
 const { connectToDatabase } = require('./db');
 const crypto = require('crypto');
 
+// Helper to parse JSON body
+function parseBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk.toString();
+    });
+    req.on('end', () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (e) {
+        reject(e);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
 module.exports = async (req, res) => {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -28,7 +46,8 @@ module.exports = async (req, res) => {
     if (req.method === 'POST') {
       console.log('📥 POST /api/monitors - Adding monitors');
       
-      const { urls } = req.body;
+      const body = await parseBody(req);
+      const { urls } = body;
       if (!urls) {
         return res.status(400).json({ error: 'URLs required' });
       }

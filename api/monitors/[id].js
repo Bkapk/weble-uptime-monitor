@@ -65,9 +65,10 @@ module.exports = async (req, res) => {
     const { id } = req.query;
     const prisma = await connectToDatabase();
     
-    // Check if this is a /check route
-    const url = req.url || '';
-    if (url.includes('/check') && req.method === 'POST') {
+    // Handle POST requests - these are check requests
+    // Vercel routes /api/monitors/{id}/check to this file, but req.url might not include /check
+    // So we'll handle all POST requests to /api/monitors/{id} as check requests
+    if (req.method === 'POST') {
       const monitor = await prisma.monitor.findUnique({ where: { id } });
       if (!monitor) {
         return res.status(404).json({ error: 'Monitor not found' });
@@ -124,8 +125,13 @@ module.exports = async (req, res) => {
       return res.status(200).json(transformed);
     }
     
-    // Check if this is a /toggle route
-    if (url.includes('/toggle') && req.method === 'PATCH') {
+    // Handle PATCH requests - check if it's a toggle or update
+    // Toggle requests go to /api/monitors/{id}/toggle
+    // We'll check the URL path or use a different method
+    if (req.method === 'PATCH') {
+      const url = req.url || '';
+      // If URL contains /toggle, handle as toggle
+      if (url.includes('/toggle')) {
       const monitor = await prisma.monitor.findUnique({ where: { id } });
       if (!monitor) {
         return res.status(404).json({ error: 'Monitor not found' });
@@ -145,11 +151,10 @@ module.exports = async (req, res) => {
         history: Array.isArray(updated.history) ? updated.history : []
       };
       
-      return res.status(200).json(transformed);
-    }
-
-    // PATCH /api/monitors/:id (update)
-    if (req.method === 'PATCH') {
+        return res.status(200).json(transformed);
+      }
+      
+      // Otherwise, it's a regular update
       const monitor = await prisma.monitor.findUnique({ where: { id } });
       if (!monitor) {
         return res.status(404).json({ error: 'Monitor not found' });

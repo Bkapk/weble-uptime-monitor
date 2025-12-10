@@ -40,14 +40,28 @@ module.exports = async (req, res) => {
       });
       
       // Transform Prisma data to match frontend types
-      const transformedMonitors = monitors.map(monitor => ({
-        ...monitor,
-        lastChecked: monitor.lastChecked ? monitor.lastChecked.getTime() : null,
-        // Ensure history is an array
-        history: Array.isArray(monitor.history) 
-          ? monitor.history 
-          : (typeof monitor.history === 'string' ? JSON.parse(monitor.history) : [])
-      }));
+      const transformedMonitors = monitors.map(monitor => {
+        // Safely parse history
+        let history = [];
+        if (monitor.history) {
+          if (Array.isArray(monitor.history)) {
+            history = monitor.history;
+          } else if (typeof monitor.history === 'string') {
+            try {
+              history = JSON.parse(monitor.history);
+              if (!Array.isArray(history)) history = [];
+            } catch (e) {
+              history = [];
+            }
+          }
+        }
+        
+        return {
+          ...monitor,
+          lastChecked: monitor.lastChecked ? monitor.lastChecked.getTime() : null,
+          history: history
+        };
+      });
       
       return res.status(200).json(transformedMonitors);
     }
@@ -100,6 +114,7 @@ module.exports = async (req, res) => {
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
     console.error('Error in /api/monitors:', error.message);
+    console.error('Stack:', error.stack);
     return res.status(500).json({ 
       error: 'Server error',
       message: error.message 

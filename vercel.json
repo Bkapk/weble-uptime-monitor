@@ -9,16 +9,52 @@
       }
     }
   ],
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "/api/index.js"
-    }
-  ],
   "routes": [
     {
+      "src": "/api/monitors/check-all",
+      "dest": "/api/check-all.js"
+    },
+    {
+      "src": "/api/monitors/:id/check",
+      "dest": "/api/check-monitor.js"
+    },
+    {
+      "src": "/api/monitors/:id/toggle",
+      "dest": "/api/toggle-monitor.js"
+    },
+    {
+      "src": "/api/monitors/:id",
+      "methods": ["PATCH"],
+      "dest": "/api/update-monitor.js"
+    },
+    {
+      "src": "/api/monitors/:id",
+      "methods": ["DELETE"],
+      "dest": "/api/delete-monitor.js"
+    },
+    {
+      "src": "/api/monitors",
+      "methods": ["GET"],
+      "dest": "/api/get-monitors.js"
+    },
+    {
+      "src": "/api/monitors",
+      "methods": ["POST"],
+      "dest": "/api/add-monitors.js"
+    },
+    {
+      "src": "/api/settings",
+      "methods": ["GET"],
+      "dest": "/api/get-settings.js"
+    },
+    {
+      "src": "/api/settings",
+      "methods": ["PATCH"],
+      "dest": "/api/update-settings.js"
+    },
+    {
       "src": "/(.*)",
-      "dest": "/$1"
+      "dest": "/dist/$1"
     }
   ]
 }

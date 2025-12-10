@@ -1,4 +1,4 @@
-const { connectToDatabase } = require('./db');
+const { connectToDatabase } = require('../../db');
 
 async function checkMonitor(monitor) {
   const start = performance.now();
@@ -43,14 +43,13 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const id = req.query.id || req.url.split('/')[3];
+    const { id } = req.query;
     console.log(`🔍 POST /api/monitors/${id}/check`);
     
     const { db } = await connectToDatabase();
     const monitorsCollection = db.collection('monitors');
     
     const monitor = await monitorsCollection.findOne({ id });
-    
     if (!monitor) {
       return res.status(404).json({ error: 'Monitor not found' });
     }
@@ -69,7 +68,7 @@ module.exports = async (req, res) => {
     }
     
     await monitorsCollection.updateOne({ id }, { $set: monitor });
-    console.log(`✅ Checked monitor: ${monitor.name} - ${result.status}`);
+    console.log(`✅ Checked: ${monitor.name} - ${result.status}`);
     
     return res.status(200).json(monitor);
   } catch (error) {

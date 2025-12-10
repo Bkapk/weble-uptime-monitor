@@ -1,4 +1,4 @@
-const { connectToDatabase } = require('./db');
+const { connectToDatabase } = require('../db');
 
 async function checkMonitor(monitor) {
   const start = performance.now();
@@ -43,7 +43,7 @@ module.exports = async (req, res) => {
   }
 
   try {
-    console.log('🔄 POST /api/monitors/check-all - Starting batch check');
+    console.log('🔄 POST /api/monitors/check-all');
     
     const { db } = await connectToDatabase();
     const monitorsCollection = db.collection('monitors');
@@ -51,11 +51,10 @@ module.exports = async (req, res) => {
     const monitors = await monitorsCollection.find({}).toArray();
     const activeMonitors = monitors.filter(m => !m.isPaused);
     
-    console.log(`📊 Found ${activeMonitors.length} active monitor(s) to check`);
+    console.log(`📊 Checking ${activeMonitors.length} monitor(s)`);
     
     let checkedCount = 0;
     
-    // Check up to 10 monitors to avoid timeout
     for (const monitor of activeMonitors.slice(0, 10)) {
       try {
         console.log(`🔍 Checking: ${monitor.name}`);
@@ -80,11 +79,10 @@ module.exports = async (req, res) => {
       }
     }
     
-    console.log(`✅ Batch check complete: ${checkedCount}/${activeMonitors.length} checked`);
+    console.log(`✅ Check complete: ${checkedCount}/${activeMonitors.length}`);
     
     return res.status(200).json({ 
       success: true, 
-      message: `Checked ${checkedCount} monitor(s)`,
       checked: checkedCount,
       total: activeMonitors.length
     });

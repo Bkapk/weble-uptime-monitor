@@ -1,0 +1,56 @@
+const { connectToDatabase } = require('../db');
+
+module.exports = async (req, res) => {
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  try {
+    const { id } = req.query;
+    const { db } = await connectToDatabase();
+    const monitorsCollection = db.collection('monitors');
+
+    // PATCH /api/monitors/:id (update)
+    if (req.method === 'PATCH') {
+      console.log(`📝 PATCH /api/monitors/${id}`);
+      
+      const monitor = await monitorsCollection.findOne({ id });
+      if (!monitor) {
+        return res.status(404).json({ error: 'Monitor not found' });
+      }
+      
+      const { url } = req.body;
+      if (url) {
+        let cleanUrl = url;
+        if (!/^https?:\/\//i.test(url)) cleanUrl = `https://${url}`;
+        monitor.url = cleanUrl;
+        monitor.name = cleanUrl.replace(/^https?:\/\//i, '').split('/')[0];
+      }
+      
+      monitor.status = 'PENDING';
+      await monitorsCollection.updateOne({ id }, { $set: monitor });
+      console.log(`✅ Updated monitor: ${id}`);
+      
+      return res.status(200).json(monitor);
+    }
+
+    // DELETE /api/monitors/:id
+    if (req.method === 'DELETE') {
+      console.log(`🗑️  DELETE /api/monitors/${id}`);
+      await monitorsCollection.deleteOne({ id });
+      console.log(`✅ Deleted monitor: ${id}`);
+      return res.status(200).json({ success: true });
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' });
+  } catch (error) {
+    console.error(`❌ Error in /api/monitors/${req.query.id}:`, error.message);
+    return res.status(500).json({ error: 'Server error', message: error.message });
+  }
+};
+

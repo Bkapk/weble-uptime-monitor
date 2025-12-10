@@ -9,11 +9,14 @@ const PORT = process.env.PORT || 3001;
 const MAX_HISTORY = 30;
 
 // MongoDB connection
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = 'weble_uptime';
 let db = null;
 let monitorsCollection = null;
 let settingsCollection = null;
+
+// Initialize DB connection immediately
+let dbConnectionPromise = null;
 
 // Middleware
 app.use(cors());
@@ -27,7 +30,7 @@ let inMemorySettings = { globalInterval: 3600 }; // Default 1 hour
 // --- Database Connection ---
 async function connectDB() {
   // Skip MongoDB if no connection string provided
-  if (!MONGODB_URI || MONGODB_URI === 'mongodb://localhost:27017') {
+  if (!MONGODB_URI) {
     console.log('⚠️  No MongoDB connection string provided.');
     console.log('⚠️  Using IN-MEMORY storage (data will be lost on restart).');
     console.log('📝 To enable persistent storage, set MONGODB_URI environment variable.');
@@ -36,15 +39,21 @@ async function connectDB() {
   }
 
   try {
+    console.log('🔄 Connecting to MongoDB...');
     const client = new MongoClient(MONGODB_URI, {
       serverApi: {
         version: ServerApiVersion.v1,
         strict: true,
         deprecationErrors: true,
-      }
+      },
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
     });
     
     await client.connect();
+    await client.db('admin').command({ ping: 1 });
+    
     db = client.db(DB_NAME);
     monitorsCollection = db.collection('monitors');
     settingsCollection = db.collection('settings');
@@ -63,10 +72,19 @@ async function connectDB() {
     return true;
   } catch (err) {
     console.error('❌ Failed to connect to MongoDB:', err.message);
+    console.error('Full error:', err);
     console.log('⚠️  Falling back to IN-MEMORY storage.');
     console.log('📝 Data will be lost on restart. Set MONGODB_URI to enable persistence.');
     return false;
   }
+}
+
+// Ensure DB connection before any operation
+async function ensureDBConnection() {
+  if (!dbConnectionPromise) {
+    dbConnectionPromise = connectDB();
+  }
+  await dbConnectionPromise;
 }
 
 // --- Database Operations ---
@@ -272,6 +290,7 @@ setInterval(async () => {
 
 app.get('/api/monitors', async (req, res) => {
   try {
+    await ensureDBConnection();
     const monitors = await getAllMonitors();
     res.json(monitors);
   } catch (err) {
@@ -458,11 +477,16 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-// Start Server
-(async () => {
-  await connectDB();
+// Initialize DB connection on startup
+connectDB();
+
+// Start Server (for local development)
+if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
     console.log(`🚀 Weble Uptime Backend running on port ${PORT}`);
     console.log(`📊 Background monitoring active (sequential checking)...`);
   });
-})();
+}
+
+// Export for Vercel serverless
+module.exports = app;

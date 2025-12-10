@@ -20,8 +20,14 @@
     },
     {
       "src": "/(.*)",
-      "dest": "/$1"
+      "dest": "/dist/$1"
+    },
+    {
+      "src": "/",
+      "dest": "/dist/index.html"
     }
-  ]
+  ],
+  "env": {
+    "MONGODB_URI": "@mongodb_uri"
+  }
 }
-

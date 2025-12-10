@@ -1,4 +1,4 @@
-export const DEFAULT_CHECK_INTERVAL = 60; // seconds
+export const DEFAULT_CHECK_INTERVAL = 3600; // seconds (1 hour)
 export const MAX_HISTORY_LENGTH = 30;
 export const LOCAL_STORAGE_KEY = 'weble_uptime_monitors_v1';
 

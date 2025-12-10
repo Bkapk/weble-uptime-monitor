@@ -20,6 +20,8 @@ test-monitors.json
 .env
 .env.local
 .env.production
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/*

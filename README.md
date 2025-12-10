@@ -23,14 +23,26 @@ A modern, real-time website uptime monitoring application built with React, Type
 - **Storage**: JSON file-based persistence
 - **Icons**: Lucide React
 
+## Database Setup (Required)
+
+This app uses MongoDB for persistent storage. You need to set up a free MongoDB Atlas database:
+
+1. **Create free MongoDB Atlas account**: https://www.mongodb.com/cloud/atlas/register
+2. **Create a free cluster** (M0 Sandbox - FREE forever)
+3. **Create database user** with read/write permissions
+4. **Add your IP** to Network Access (or allow 0.0.0.0/0 for all IPs)
+5. **Get connection string** from "Connect" → "Connect your application"
+
+For detailed instructions, see [SETUP.md](SETUP.md)
+
 ## Run Locally
 
-**Prerequisites:** Node.js 18+ and npm
+**Prerequisites:** Node.js 18+, npm, MongoDB connection string
 
 1. **Clone the repository**
    ```bash
-   git clone <your-repo-url>
-   cd "Weble Uptime Monitor"
+   git clone https://github.com/Bkapk/weble-uptime-monitor.git
+   cd weble-uptime-monitor
    ```
 
 2. **Install dependencies**
@@ -38,20 +50,30 @@ A modern, real-time website uptime monitoring application built with React, Type
    npm install
    ```
 
-3. **Start the backend server** (Terminal 1)
+3. **Configure environment variables**
+   
+   Create a `.env` file in the project root:
+   ```env
+   MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority
+   PORT=3001
+   ```
+   Replace with your actual MongoDB connection string.
+
+4. **Start the backend server** (Terminal 1)
    ```bash
    npm start
    ```
    Backend runs on `http://localhost:3001`
 
-4. **Start the frontend dev server** (Terminal 2)
+5. **Start the frontend dev server** (Terminal 2)
    ```bash
    npm run dev
    ```
    Frontend runs on `http://localhost:3000`
 
-5. **Open your browser**
+6. **Open your browser**
    Navigate to `http://localhost:3000`
+   - Password: `Weble2024.`
 
 ## Available Scripts
 
@@ -84,21 +106,28 @@ A modern, real-time website uptime monitoring application built with React, Type
 
 ### Option 1: Deploy to Vercel (Recommended)
 
-1. Push your code to GitHub
-2. Import project in [Vercel](https://vercel.com)
-3. Configure build settings:
+1. Set up MongoDB Atlas (see Database Setup above)
+2. Push your code to GitHub
+3. Import project in [Vercel](https://vercel.com)
+4. Configure build settings:
    - **Build Command**: `npm run build`
    - **Output Directory**: `dist`
    - **Install Command**: `npm install`
-4. Add environment variables if needed
-5. Deploy!
+5. **Add environment variables**:
+   - Key: `MONGODB_URI`
+   - Value: Your MongoDB connection string
+6. Deploy!
 
 ### Option 2: Deploy to Railway/Render
 
-1. Connect your GitHub repository
-2. Set build command: `npm run build`
-3. Set start command: `npm start`
-4. The platform will handle the rest
+1. Set up MongoDB Atlas (see Database Setup above)
+2. Connect your GitHub repository
+3. Set build command: `npm run build`
+4. Set start command: `npm start`
+5. **Add environment variable**:
+   - Key: `MONGODB_URI`
+   - Value: Your MongoDB connection string
+6. Deploy!
 
 ### Option 3: Self-hosted
 
@@ -117,7 +146,11 @@ A modern, real-time website uptime monitoring application built with React, Type
 
 ## Data Persistence
 
-Monitor data is stored in `monitors.json` in the project root. This file is automatically created and updated by the server.
+Monitor data is stored in MongoDB Atlas (cloud database). Your data persists permanently and is accessible from anywhere. The database automatically:
+- Saves all monitor configurations
+- Stores check history (last 30 points)
+- Maintains status across server restarts
+- Syncs in real-time
 
 ## Testing
 

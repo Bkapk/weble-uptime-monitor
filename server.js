@@ -1,46 +1,81 @@
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
+const { MongoClient, ServerApiVersion } = require('mongodb');
 const path = require('path');
 const crypto = require('crypto');
 
 const app = express();
-// Cloud providers often inject the PORT via environment variables. Fallback to 3001 for local dev.
 const PORT = process.env.PORT || 3001;
-const DATA_FILE = path.join(__dirname, 'monitors.json');
 const MAX_HISTORY = 30;
+
+// MongoDB connection
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+const DB_NAME = 'weble_uptime';
+let db = null;
+let monitorsCollection = null;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-
-// --- Static File Serving ---
-// Serve the 'dist' directory (standard build output for Vite/React)
-// This allows the Node server to serve the frontend app directly.
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// In-memory state
-let monitors = [];
-
-// --- Persistence ---
-function loadData() {
+// --- Database Connection ---
+async function connectDB() {
   try {
-    if (fs.existsSync(DATA_FILE)) {
-      const data = fs.readFileSync(DATA_FILE, 'utf8');
-      monitors = JSON.parse(data);
-      console.log(`Loaded ${monitors.length} monitors from disk.`);
-    }
+    const client = new MongoClient(MONGODB_URI, {
+      serverApi: {
+        version: ServerApiVersion.v1,
+        strict: true,
+        deprecationErrors: true,
+      }
+    });
+    
+    await client.connect();
+    db = client.db(DB_NAME);
+    monitorsCollection = db.collection('monitors');
+    
+    // Create index for faster lookups
+    await monitorsCollection.createIndex({ id: 1 }, { unique: true });
+    
+    console.log('✅ Connected to MongoDB successfully');
+    return true;
   } catch (err) {
-    console.error('Failed to load data:', err);
-    monitors = [];
+    console.error('❌ Failed to connect to MongoDB:', err.message);
+    console.log('⚠️  Running without persistent storage. Data will be lost on restart.');
+    return false;
   }
 }
 
-function saveData() {
+// --- Database Operations ---
+async function getAllMonitors() {
+  if (!monitorsCollection) return [];
   try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(monitors, null, 2));
+    return await monitorsCollection.find({}).toArray();
   } catch (err) {
-    console.error('Failed to save data:', err);
+    console.error('Error fetching monitors:', err);
+    return [];
+  }
+}
+
+async function saveMonitor(monitor) {
+  if (!monitorsCollection) return;
+  try {
+    await monitorsCollection.updateOne(
+      { id: monitor.id },
+      { $set: monitor },
+      { upsert: true }
+    );
+  } catch (err) {
+    console.error('Error saving monitor:', err);
+  }
+}
+
+async function deleteMonitorById(id) {
+  if (!monitorsCollection) return;
+  try {
+    await monitorsCollection.deleteOne({ id });
+  } catch (err) {
+    console.error('Error deleting monitor:', err);
   }
 }
 
@@ -55,7 +90,7 @@ async function checkMonitor(monitor) {
   const start = performance.now();
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
 
     const response = await fetch(monitor.url, { 
       method: 'HEAD', 
@@ -69,7 +104,6 @@ async function checkMonitor(monitor) {
 
     const isUp = response.ok || (response.status >= 200 && response.status < 400); 
     
-    // Status Transition Check
     if (monitor.status === 'UP' && !isUp) {
       sendAlert(monitor, response.status);
     }
@@ -80,7 +114,6 @@ async function checkMonitor(monitor) {
       latency: latency
     };
   } catch (error) {
-    // Network errors (DNS, Connection Refused)
     if (monitor.status === 'UP') {
       sendAlert(monitor, 'Network Error');
     }
@@ -93,12 +126,13 @@ async function checkMonitor(monitor) {
 }
 
 // The Heartbeat Loop
-setInterval(() => {
+setInterval(async () => {
+  const monitors = await getAllMonitors();
   const now = Date.now();
   
-  monitors.forEach(monitor => {
-    if (monitor.isPaused) return;
-    if (monitor._isChecking) return;
+  for (const monitor of monitors) {
+    if (monitor.isPaused) continue;
+    if (monitor._isChecking) continue;
 
     const lastChecked = monitor.lastChecked || 0;
     const intervalMs = monitor.interval * 1000;
@@ -106,34 +140,37 @@ setInterval(() => {
     if (now - lastChecked >= intervalMs) {
       monitor._isChecking = true;
       
-      checkMonitor(monitor).then(result => {
+      try {
+        const result = await checkMonitor(monitor);
         monitor.status = result.status;
         monitor.statusCode = result.statusCode;
         monitor.latency = result.latency;
         monitor.lastChecked = Date.now();
         
+        if (!monitor.history) monitor.history = [];
         monitor.history.push({ timestamp: Date.now(), latency: result.latency });
         if (monitor.history.length > MAX_HISTORY) {
           monitor.history.shift();
         }
 
-        monitor._isChecking = false;
-        saveData();
-      }).catch(err => {
+        delete monitor._isChecking;
+        await saveMonitor(monitor);
+      } catch (err) {
         console.error(`Error checking ${monitor.name}:`, err);
-        monitor._isChecking = false;
-      });
+        delete monitor._isChecking;
+      }
     }
-  });
+  }
 }, 1000);
 
 // --- API Routes ---
 
-app.get('/api/monitors', (req, res) => {
+app.get('/api/monitors', async (req, res) => {
+  const monitors = await getAllMonitors();
   res.json(monitors);
 });
 
-app.post('/api/monitors', (req, res) => {
+app.post('/api/monitors', async (req, res) => {
   const { urls, interval } = req.body;
   if (!urls) return res.status(400).json({ error: 'URLs required' });
 
@@ -154,30 +191,36 @@ app.post('/api/monitors', (req, res) => {
       lastChecked: null,
       latency: null,
       history: [],
-      interval: interval || 60,
+      interval: interval || 3600,
       isPaused: false
     };
   });
 
-  monitors.push(...newMonitors);
-  saveData();
+  for (const monitor of newMonitors) {
+    await saveMonitor(monitor);
+  }
+  
   res.json(newMonitors);
 });
 
-app.patch('/api/monitors/:id/toggle', (req, res) => {
+app.patch('/api/monitors/:id/toggle', async (req, res) => {
+  const monitors = await getAllMonitors();
   const monitor = monitors.find(m => m.id === req.params.id);
+  
   if (monitor) {
     monitor.isPaused = !monitor.isPaused;
     monitor.status = monitor.isPaused ? 'PAUSED' : 'PENDING';
-    saveData();
+    await saveMonitor(monitor);
     res.json(monitor);
   } else {
     res.status(404).json({ error: 'Monitor not found' });
   }
 });
 
-app.patch('/api/monitors/:id', (req, res) => {
+app.patch('/api/monitors/:id', async (req, res) => {
+  const monitors = await getAllMonitors();
   const monitor = monitors.find(m => m.id === req.params.id);
+  
   if (monitor) {
     const { url, interval } = req.body;
     if (url) {
@@ -189,31 +232,35 @@ app.patch('/api/monitors/:id', (req, res) => {
     if (interval !== undefined) {
       monitor.interval = interval;
     }
-    monitor.status = 'PENDING'; // Reset status to check with new settings
-    saveData();
+    monitor.status = 'PENDING';
+    await saveMonitor(monitor);
     res.json(monitor);
   } else {
     res.status(404).json({ error: 'Monitor not found' });
   }
 });
 
-app.delete('/api/monitors/:id', (req, res) => {
-  monitors = monitors.filter(m => m.id !== req.params.id);
-  saveData();
+app.delete('/api/monitors/:id', async (req, res) => {
+  await deleteMonitorById(req.params.id);
   res.json({ success: true });
 });
 
 app.post('/api/monitors/:id/check', async (req, res) => {
+  const monitors = await getAllMonitors();
   const monitor = monitors.find(m => m.id === req.params.id);
+  
   if (monitor) {
     const result = await checkMonitor(monitor);
     monitor.status = result.status;
     monitor.statusCode = result.statusCode;
     monitor.latency = result.latency;
     monitor.lastChecked = Date.now();
+    
+    if (!monitor.history) monitor.history = [];
     monitor.history.push({ timestamp: Date.now(), latency: result.latency });
     if (monitor.history.length > MAX_HISTORY) monitor.history.shift();
-    saveData();
+    
+    await saveMonitor(monitor);
     res.json(monitor);
   } else {
     res.status(404).json({ error: 'Monitor not found' });
@@ -221,15 +268,15 @@ app.post('/api/monitors/:id/check', async (req, res) => {
 });
 
 // --- Catch-All Route ---
-// For any request that isn't an API route, serve the index.html.
-// This supports client-side routing if you add it later.
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 // Start Server
-loadData();
-app.listen(PORT, () => {
-  console.log(`Weble Uptime Backend running on port ${PORT}`);
-  console.log(`Background monitoring active...`);
-});
+(async () => {
+  await connectDB();
+  app.listen(PORT, () => {
+    console.log(`🚀 Weble Uptime Backend running on port ${PORT}`);
+    console.log(`📊 Background monitoring active...`);
+  });
+})();

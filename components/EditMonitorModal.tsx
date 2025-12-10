@@ -6,17 +6,15 @@ interface EditMonitorModalProps {
   isOpen: boolean;
   monitor: Monitor | null;
   onClose: () => void;
-  onSave: (id: string, url: string, interval: number) => void;
+  onSave: (id: string, url: string) => void;
 }
 
 const EditMonitorModal: React.FC<EditMonitorModalProps> = ({ isOpen, monitor, onClose, onSave }) => {
   const [url, setUrl] = useState('');
-  const [interval, setInterval] = useState(60);
 
   useEffect(() => {
     if (monitor) {
       setUrl(monitor.url);
-      setInterval(monitor.interval);
     }
   }, [monitor]);
 
@@ -24,7 +22,7 @@ const EditMonitorModal: React.FC<EditMonitorModalProps> = ({ isOpen, monitor, on
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(monitor.id, url, interval);
+    onSave(monitor.id, url);
     onClose();
   };
 
@@ -54,21 +52,9 @@ const EditMonitorModal: React.FC<EditMonitorModalProps> = ({ isOpen, monitor, on
               className="w-full h-24 bg-slate-900/50 border border-slate-600 rounded-lg p-3 text-sm text-slate-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none font-mono"
               required
             />
-          </div>
-
-          <div>
-            <label htmlFor="edit-interval" className="block text-sm font-medium text-slate-300 mb-2">
-              Check Interval (seconds)
-            </label>
-            <input
-              id="edit-interval"
-              type="number"
-              min="10"
-              max="3600"
-              value={interval}
-              onChange={(e) => setInterval(Number(e.target.value))}
-              className="w-full bg-slate-900/50 border border-slate-600 rounded-lg p-3 text-sm text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
-            />
+            <p className="mt-2 text-xs text-slate-500">
+              Check interval is controlled globally in Settings.
+            </p>
           </div>
 
           <div className="pt-4 flex justify-end gap-3">

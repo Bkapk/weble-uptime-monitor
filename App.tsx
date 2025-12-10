@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Activity, Plus, Bell, BellOff, ShieldCheck, Server } from 'lucide-react';
+import { Activity, Plus, Bell, BellOff, ShieldCheck, Server, Settings, RefreshCw } from 'lucide-react';
 import { Monitor, MonitorStatus, AddMonitorFormData, Stats } from './types';
 import { 
   fetchMonitors, 
@@ -8,24 +8,31 @@ import {
   toggleMonitorPause, 
   triggerManualCheck,
   updateMonitor,
-  requestNotificationPermission 
+  requestNotificationPermission,
+  checkAllMonitors,
+  getSettings,
+  updateSettings
 } from './services/monitorService';
 import StatsOverview from './components/StatsOverview';
 import MonitorCard from './components/MonitorCard';
 import AddMonitorModal from './components/AddMonitorModal';
 import EditMonitorModal from './components/EditMonitorModal';
 import PasswordModal from './components/PasswordModal';
+import SettingsModal from './components/SettingsModal';
 
 const App: React.FC = () => {
   const [monitors, setMonitors] = useState<Monitor[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [editingMonitor, setEditingMonitor] = useState<Monitor | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [isServerConnected, setIsServerConnected] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [globalInterval, setGlobalInterval] = useState(3600);
+  const [isCheckingAll, setIsCheckingAll] = useState(false);
 
-  // Check authentication on mount
+  // Check authentication on mount and load settings
   useEffect(() => {
     const checkAuth = () => {
       const authCookie = document.cookie.split(';').find(c => c.trim().startsWith('weble_auth='));
@@ -34,6 +41,17 @@ const App: React.FC = () => {
       }
     };
     checkAuth();
+    
+    // Load settings
+    const loadSettings = async () => {
+      try {
+        const settings = await getSettings();
+        setGlobalInterval(settings.globalInterval);
+      } catch (e) {
+        console.error('Failed to load settings', e);
+      }
+    };
+    loadSettings();
   }, []);
 
   // Check notification permission on mount
@@ -108,14 +126,34 @@ const App: React.FC = () => {
     setIsEditModalOpen(true);
   };
 
-  const handleSaveEdit = async (id: string, url: string, interval: number) => {
+  const handleSaveEdit = async (id: string, url: string) => {
     try {
-      await updateMonitor(id, url, interval);
+      await updateMonitor(id, url, globalInterval);
       const updated = await fetchMonitors();
       setMonitors(updated);
     } catch (e) {
       console.error("Failed to update monitor", e);
       setIsServerConnected(false);
+    }
+  };
+
+  const handleCheckAll = async () => {
+    setIsCheckingAll(true);
+    try {
+      await checkAllMonitors();
+      setTimeout(() => setIsCheckingAll(false), 2000);
+    } catch (e) {
+      console.error("Failed to check all monitors", e);
+      setIsCheckingAll(false);
+    }
+  };
+
+  const handleSaveSettings = async (interval: number) => {
+    try {
+      await updateSettings(interval);
+      setGlobalInterval(interval);
+    } catch (e) {
+      console.error("Failed to update settings", e);
     }
   };
 
@@ -169,20 +207,41 @@ const App: React.FC = () => {
             )}
           </div>
           
-          <div className="flex items-center gap-4">
-             <button
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleCheckAll}
+              disabled={isCheckingAll || monitors.length === 0}
+              className={`flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-lg transition-all ${
+                isCheckingAll 
+                  ? 'bg-blue-600/50 text-blue-200 cursor-not-allowed' 
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+              }`}
+              title="Check all monitors now"
+            >
+              <RefreshCw size={16} className={isCheckingAll ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">Check All</span>
+            </button>
+            <button
+              onClick={() => setIsSettingsModalOpen(true)}
+              className="flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+              title="Global settings"
+            >
+              <Settings size={16} />
+              <span className="hidden sm:inline">Settings</span>
+            </button>
+            <button
               onClick={handleEnableNotifications}
               className={`flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-full transition-colors ${notificationsEnabled ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
             >
               {notificationsEnabled ? <Bell size={16} /> : <BellOff size={16} />}
-              <span className="hidden sm:inline">{notificationsEnabled ? 'Alerts Active' : 'Enable Alerts'}</span>
+              <span className="hidden sm:inline">{notificationsEnabled ? 'Alerts' : 'Alerts'}</span>
             </button>
             <button
               onClick={() => setIsModalOpen(true)}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 active:scale-95"
             >
               <Plus size={18} />
-              Add Monitors
+              <span className="hidden sm:inline">Add Monitors</span>
             </button>
           </div>
         </div>
@@ -239,6 +298,13 @@ const App: React.FC = () => {
           setEditingMonitor(null);
         }}
         onSave={handleSaveEdit}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        currentInterval={globalInterval}
+        onSave={handleSaveSettings}
       />
     </div>
   );

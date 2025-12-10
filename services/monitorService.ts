@@ -50,3 +50,21 @@ export const requestNotificationPermission = async () => {
   const permission = await Notification.requestPermission();
   return permission === "granted";
 };
+
+export const checkAllMonitors = async (): Promise<void> => {
+  await fetch(`${API_BASE}/monitors/check-all`, { method: 'POST' });
+};
+
+export const getSettings = async (): Promise<{ globalInterval: number }> => {
+  const res = await fetch(`${API_BASE}/settings`);
+  if (!res.ok) throw new Error('Failed to fetch settings');
+  return await res.json();
+};
+
+export const updateSettings = async (globalInterval: number): Promise<void> => {
+  await fetch(`${API_BASE}/settings`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ globalInterval })
+  });
+};

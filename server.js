@@ -13,6 +13,7 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const DB_NAME = 'weble_uptime';
 let db = null;
 let monitorsCollection = null;
+let settingsCollection = null;
 
 // Middleware
 app.use(cors());
@@ -21,6 +22,7 @@ app.use(express.static(path.join(__dirname, 'dist')));
 
 // Fallback in-memory storage when MongoDB is not available
 let inMemoryMonitors = [];
+let inMemorySettings = { globalInterval: 3600 }; // Default 1 hour
 
 // --- Database Connection ---
 async function connectDB() {
@@ -45,9 +47,16 @@ async function connectDB() {
     await client.connect();
     db = client.db(DB_NAME);
     monitorsCollection = db.collection('monitors');
+    settingsCollection = db.collection('settings');
     
-    // Create index for faster lookups
+    // Create indexes for faster lookups
     await monitorsCollection.createIndex({ id: 1 }, { unique: true });
+    
+    // Initialize settings if not exists
+    const settings = await settingsCollection.findOne({ _id: 'global' });
+    if (!settings) {
+      await settingsCollection.insertOne({ _id: 'global', globalInterval: 3600 });
+    }
     
     console.log('✅ Connected to MongoDB successfully');
     console.log('💾 Data will persist permanently');
@@ -63,32 +72,34 @@ async function connectDB() {
 // --- Database Operations ---
 async function getAllMonitors() {
   if (!monitorsCollection) {
-    // Fallback to in-memory storage
-    return inMemoryMonitors;
+    return [...inMemoryMonitors];
   }
   try {
     return await monitorsCollection.find({}).toArray();
   } catch (err) {
     console.error('Error fetching monitors:', err);
-    return inMemoryMonitors;
+    return [...inMemoryMonitors];
   }
 }
 
 async function saveMonitor(monitor) {
+  // Remove _isChecking flag before saving
+  const cleanMonitor = { ...monitor };
+  delete cleanMonitor._isChecking;
+  
   if (!monitorsCollection) {
-    // Fallback to in-memory storage
-    const index = inMemoryMonitors.findIndex(m => m.id === monitor.id);
+    const index = inMemoryMonitors.findIndex(m => m.id === cleanMonitor.id);
     if (index >= 0) {
-      inMemoryMonitors[index] = monitor;
+      inMemoryMonitors[index] = cleanMonitor;
     } else {
-      inMemoryMonitors.push(monitor);
+      inMemoryMonitors.push(cleanMonitor);
     }
     return;
   }
   try {
     await monitorsCollection.updateOne(
-      { id: monitor.id },
-      { $set: monitor },
+      { id: cleanMonitor.id },
+      { $set: cleanMonitor },
       { upsert: true }
     );
   } catch (err) {
@@ -98,7 +109,6 @@ async function saveMonitor(monitor) {
 
 async function deleteMonitorById(id) {
   if (!monitorsCollection) {
-    // Fallback to in-memory storage
     inMemoryMonitors = inMemoryMonitors.filter(m => m.id !== id);
     return;
   }
@@ -106,6 +116,35 @@ async function deleteMonitorById(id) {
     await monitorsCollection.deleteOne({ id });
   } catch (err) {
     console.error('Error deleting monitor:', err);
+  }
+}
+
+async function getSettings() {
+  if (!settingsCollection) {
+    return inMemorySettings;
+  }
+  try {
+    const settings = await settingsCollection.findOne({ _id: 'global' });
+    return settings || { globalInterval: 3600 };
+  } catch (err) {
+    console.error('Error fetching settings:', err);
+    return { globalInterval: 3600 };
+  }
+}
+
+async function saveSettings(settings) {
+  if (!settingsCollection) {
+    inMemorySettings = settings;
+    return;
+  }
+  try {
+    await settingsCollection.updateOne(
+      { _id: 'global' },
+      { $set: settings },
+      { upsert: true }
+    );
+  } catch (err) {
+    console.error('Error saving settings:', err);
   }
 }
 
@@ -155,145 +194,262 @@ async function checkMonitor(monitor) {
   }
 }
 
-// The Heartbeat Loop
-setInterval(async () => {
-  const monitors = await getAllMonitors();
-  const now = Date.now();
+// Sequential checking queue
+let checkQueue = [];
+let isChecking = false;
+
+async function processCheckQueue() {
+  if (isChecking || checkQueue.length === 0) return;
   
-  for (const monitor of monitors) {
-    if (monitor.isPaused) continue;
-    if (monitor._isChecking) continue;
-
-    const lastChecked = monitor.lastChecked || 0;
-    const intervalMs = monitor.interval * 1000;
-
-    if (now - lastChecked >= intervalMs) {
-      monitor._isChecking = true;
+  isChecking = true;
+  
+  while (checkQueue.length > 0) {
+    const monitorId = checkQueue.shift();
+    
+    try {
+      const monitors = await getAllMonitors();
+      const monitor = monitors.find(m => m.id === monitorId);
       
-      try {
-        const result = await checkMonitor(monitor);
-        monitor.status = result.status;
-        monitor.statusCode = result.statusCode;
-        monitor.latency = result.latency;
-        monitor.lastChecked = Date.now();
-        
-        if (!monitor.history) monitor.history = [];
-        monitor.history.push({ timestamp: Date.now(), latency: result.latency });
-        if (monitor.history.length > MAX_HISTORY) {
-          monitor.history.shift();
-        }
+      if (!monitor || monitor.isPaused) continue;
+      
+      console.log(`🔍 Checking: ${monitor.name}`);
+      const result = await checkMonitor(monitor);
+      
+      monitor.status = result.status;
+      monitor.statusCode = result.statusCode;
+      monitor.latency = result.latency;
+      monitor.lastChecked = Date.now();
+      
+      if (!monitor.history) monitor.history = [];
+      monitor.history.push({ timestamp: Date.now(), latency: result.latency });
+      if (monitor.history.length > MAX_HISTORY) {
+        monitor.history.shift();
+      }
+      
+      await saveMonitor(monitor);
+      console.log(`✅ Checked: ${monitor.name} - ${result.status}`);
+      
+    } catch (err) {
+      console.error(`Error processing monitor ${monitorId}:`, err);
+    }
+    
+    // Small delay between checks
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  
+  isChecking = false;
+}
 
-        delete monitor._isChecking;
-        await saveMonitor(monitor);
-      } catch (err) {
-        console.error(`Error checking ${monitor.name}:`, err);
-        delete monitor._isChecking;
+// The Heartbeat Loop - Sequential checking
+setInterval(async () => {
+  try {
+    const monitors = await getAllMonitors();
+    const settings = await getSettings();
+    const now = Date.now();
+    const globalIntervalMs = settings.globalInterval * 1000;
+    
+    for (const monitor of monitors) {
+      if (monitor.isPaused) continue;
+      
+      const lastChecked = monitor.lastChecked || 0;
+      
+      if (now - lastChecked >= globalIntervalMs) {
+        // Add to queue if not already there
+        if (!checkQueue.includes(monitor.id)) {
+          checkQueue.push(monitor.id);
+        }
       }
     }
+    
+    // Process the queue
+    processCheckQueue();
+  } catch (err) {
+    console.error('Error in heartbeat loop:', err);
   }
-}, 1000);
+}, 5000); // Check every 5 seconds
 
 // --- API Routes ---
 
 app.get('/api/monitors', async (req, res) => {
-  const monitors = await getAllMonitors();
-  res.json(monitors);
+  try {
+    const monitors = await getAllMonitors();
+    res.json(monitors);
+  } catch (err) {
+    console.error('Error in GET /api/monitors:', err);
+    res.status(500).json({ error: 'Failed to fetch monitors' });
+  }
 });
 
 app.post('/api/monitors', async (req, res) => {
-  const { urls, interval } = req.body;
-  if (!urls) return res.status(400).json({ error: 'URLs required' });
+  try {
+    const { urls } = req.body;
+    if (!urls) return res.status(400).json({ error: 'URLs required' });
 
-  const urlList = urls.split('\n').map(l => l.trim()).filter(l => l);
-  
-  const newMonitors = urlList.map(url => {
-    let cleanUrl = url;
-    if (!/^https?:\/\//i.test(url)) cleanUrl = `https://${url}`;
+    const urlList = urls.split('\n').map(l => l.trim()).filter(l => l);
     
-    let name = cleanUrl.replace(/^https?:\/\//i, '').split('/')[0];
+    const newMonitors = urlList.map(url => {
+      let cleanUrl = url;
+      if (!/^https?:\/\//i.test(url)) cleanUrl = `https://${url}`;
+      
+      let name = cleanUrl.replace(/^https?:\/\//i, '').split('/')[0];
 
-    return {
-      id: crypto.randomUUID(),
-      url: cleanUrl,
-      name: name,
-      status: 'PENDING',
-      statusCode: null,
-      lastChecked: null,
-      latency: null,
-      history: [],
-      interval: interval || 3600,
-      isPaused: false
-    };
-  });
+      return {
+        id: crypto.randomUUID(),
+        url: cleanUrl,
+        name: name,
+        status: 'PENDING',
+        statusCode: null,
+        lastChecked: null,
+        latency: null,
+        history: [],
+        isPaused: false
+      };
+    });
 
-  for (const monitor of newMonitors) {
-    await saveMonitor(monitor);
+    for (const monitor of newMonitors) {
+      await saveMonitor(monitor);
+    }
+    
+    console.log(`✅ Added ${newMonitors.length} new monitor(s)`);
+    res.json(newMonitors);
+  } catch (err) {
+    console.error('Error in POST /api/monitors:', err);
+    res.status(500).json({ error: 'Failed to add monitors' });
   }
-  
-  res.json(newMonitors);
 });
 
 app.patch('/api/monitors/:id/toggle', async (req, res) => {
-  const monitors = await getAllMonitors();
-  const monitor = monitors.find(m => m.id === req.params.id);
-  
-  if (monitor) {
-    monitor.isPaused = !monitor.isPaused;
-    monitor.status = monitor.isPaused ? 'PAUSED' : 'PENDING';
-    await saveMonitor(monitor);
-    res.json(monitor);
-  } else {
-    res.status(404).json({ error: 'Monitor not found' });
+  try {
+    const monitors = await getAllMonitors();
+    const monitor = monitors.find(m => m.id === req.params.id);
+    
+    if (monitor) {
+      monitor.isPaused = !monitor.isPaused;
+      monitor.status = monitor.isPaused ? 'PAUSED' : 'PENDING';
+      await saveMonitor(monitor);
+      res.json(monitor);
+    } else {
+      res.status(404).json({ error: 'Monitor not found' });
+    }
+  } catch (err) {
+    console.error('Error in PATCH /api/monitors/:id/toggle:', err);
+    res.status(500).json({ error: 'Failed to toggle monitor' });
   }
 });
 
 app.patch('/api/monitors/:id', async (req, res) => {
-  const monitors = await getAllMonitors();
-  const monitor = monitors.find(m => m.id === req.params.id);
-  
-  if (monitor) {
-    const { url, interval } = req.body;
-    if (url) {
-      let cleanUrl = url;
-      if (!/^https?:\/\//i.test(url)) cleanUrl = `https://${url}`;
-      monitor.url = cleanUrl;
-      monitor.name = cleanUrl.replace(/^https?:\/\//i, '').split('/')[0];
+  try {
+    const monitors = await getAllMonitors();
+    const monitor = monitors.find(m => m.id === req.params.id);
+    
+    if (monitor) {
+      const { url } = req.body;
+      if (url) {
+        let cleanUrl = url;
+        if (!/^https?:\/\//i.test(url)) cleanUrl = `https://${url}`;
+        monitor.url = cleanUrl;
+        monitor.name = cleanUrl.replace(/^https?:\/\//i, '').split('/')[0];
+      }
+      monitor.status = 'PENDING';
+      await saveMonitor(monitor);
+      res.json(monitor);
+    } else {
+      res.status(404).json({ error: 'Monitor not found' });
     }
-    if (interval !== undefined) {
-      monitor.interval = interval;
-    }
-    monitor.status = 'PENDING';
-    await saveMonitor(monitor);
-    res.json(monitor);
-  } else {
-    res.status(404).json({ error: 'Monitor not found' });
+  } catch (err) {
+    console.error('Error in PATCH /api/monitors/:id:', err);
+    res.status(500).json({ error: 'Failed to update monitor' });
   }
 });
 
 app.delete('/api/monitors/:id', async (req, res) => {
-  await deleteMonitorById(req.params.id);
-  res.json({ success: true });
+  try {
+    await deleteMonitorById(req.params.id);
+    console.log(`🗑️  Deleted monitor: ${req.params.id}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error in DELETE /api/monitors/:id:', err);
+    res.status(500).json({ error: 'Failed to delete monitor' });
+  }
 });
 
 app.post('/api/monitors/:id/check', async (req, res) => {
-  const monitors = await getAllMonitors();
-  const monitor = monitors.find(m => m.id === req.params.id);
-  
-  if (monitor) {
-    const result = await checkMonitor(monitor);
-    monitor.status = result.status;
-    monitor.statusCode = result.statusCode;
-    monitor.latency = result.latency;
-    monitor.lastChecked = Date.now();
+  try {
+    const monitors = await getAllMonitors();
+    const monitor = monitors.find(m => m.id === req.params.id);
     
-    if (!monitor.history) monitor.history = [];
-    monitor.history.push({ timestamp: Date.now(), latency: result.latency });
-    if (monitor.history.length > MAX_HISTORY) monitor.history.shift();
+    if (monitor) {
+      const result = await checkMonitor(monitor);
+      monitor.status = result.status;
+      monitor.statusCode = result.statusCode;
+      monitor.latency = result.latency;
+      monitor.lastChecked = Date.now();
+      
+      if (!monitor.history) monitor.history = [];
+      monitor.history.push({ timestamp: Date.now(), latency: result.latency });
+      if (monitor.history.length > MAX_HISTORY) monitor.history.shift();
+      
+      await saveMonitor(monitor);
+      res.json(monitor);
+    } else {
+      res.status(404).json({ error: 'Monitor not found' });
+    }
+  } catch (err) {
+    console.error('Error in POST /api/monitors/:id/check:', err);
+    res.status(500).json({ error: 'Failed to check monitor' });
+  }
+});
+
+// Check all monitors endpoint
+app.post('/api/monitors/check-all', async (req, res) => {
+  try {
+    const monitors = await getAllMonitors();
+    const activeMonitors = monitors.filter(m => !m.isPaused);
     
-    await saveMonitor(monitor);
-    res.json(monitor);
-  } else {
-    res.status(404).json({ error: 'Monitor not found' });
+    // Add all to queue
+    for (const monitor of activeMonitors) {
+      if (!checkQueue.includes(monitor.id)) {
+        checkQueue.push(monitor.id);
+      }
+    }
+    
+    processCheckQueue();
+    
+    res.json({ 
+      success: true, 
+      message: `Checking ${activeMonitors.length} monitor(s)`,
+      queued: activeMonitors.length 
+    });
+  } catch (err) {
+    console.error('Error in POST /api/monitors/check-all:', err);
+    res.status(500).json({ error: 'Failed to queue checks' });
+  }
+});
+
+// Settings endpoints
+app.get('/api/settings', async (req, res) => {
+  try {
+    const settings = await getSettings();
+    res.json(settings);
+  } catch (err) {
+    console.error('Error in GET /api/settings:', err);
+    res.status(500).json({ error: 'Failed to fetch settings' });
+  }
+});
+
+app.patch('/api/settings', async (req, res) => {
+  try {
+    const { globalInterval } = req.body;
+    if (globalInterval !== undefined && globalInterval >= 10) {
+      await saveSettings({ globalInterval });
+      console.log(`⚙️  Global interval updated to ${globalInterval} seconds`);
+      res.json({ success: true, globalInterval });
+    } else {
+      res.status(400).json({ error: 'Invalid interval (must be >= 10 seconds)' });
+    }
+  } catch (err) {
+    console.error('Error in PATCH /api/settings:', err);
+    res.status(500).json({ error: 'Failed to update settings' });
   }
 });
 
@@ -307,6 +463,6 @@ app.get('*', (req, res) => {
   await connectDB();
   app.listen(PORT, () => {
     console.log(`🚀 Weble Uptime Backend running on port ${PORT}`);
-    console.log(`📊 Background monitoring active...`);
+    console.log(`📊 Background monitoring active (sequential checking)...`);
   });
 })();

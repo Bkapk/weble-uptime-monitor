@@ -11,13 +11,12 @@ interface AddMonitorModalProps {
 
 const AddMonitorModal: React.FC<AddMonitorModalProps> = ({ isOpen, onClose, onAdd }) => {
   const [urls, setUrls] = useState('');
-  const [interval, setInterval] = useState(DEFAULT_CHECK_INTERVAL);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onAdd({ urls, interval });
+    onAdd({ urls, interval: DEFAULT_CHECK_INTERVAL });
     setUrls('');
     onClose();
   };
@@ -50,23 +49,8 @@ const AddMonitorModal: React.FC<AddMonitorModalProps> = ({ isOpen, onClose, onAd
             />
             <p className="mt-2 text-xs text-slate-500 flex items-start gap-1">
               <Server size={12} className="mt-0.5 flex-shrink-0" />
-              Monitoring will run in the background on the server.
+              Monitoring will use the global check interval. Configure in Settings.
             </p>
-          </div>
-
-          <div>
-            <label htmlFor="monitor-interval" className="block text-sm font-medium text-slate-300 mb-2">
-              Check Interval (seconds)
-            </label>
-            <input
-              id="monitor-interval"
-              type="number"
-              min="10"
-              max="3600"
-              value={interval}
-              onChange={(e) => setInterval(Number(e.target.value))}
-              className="w-full bg-slate-900/50 border border-slate-600 rounded-lg p-3 text-sm text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
-            />
           </div>
 
           <div className="pt-4 flex justify-end gap-3">

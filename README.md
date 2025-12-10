@@ -54,10 +54,10 @@ For detailed instructions, see [SETUP.md](SETUP.md)
    
    Create a `.env` file in the project root:
    ```env
-   MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority
+   MONGODB_URI=your_mongodb_connection_string_here
    PORT=3001
    ```
-   Replace with your actual MongoDB connection string.
+   Get your MongoDB connection string from MongoDB Atlas (see Database Setup above).
 
 4. **Start the backend server** (Terminal 1)
    ```bash
@@ -73,7 +73,7 @@ For detailed instructions, see [SETUP.md](SETUP.md)
 
 6. **Open your browser**
    Navigate to `http://localhost:3000`
-   - Password: `Weble2024.`
+   - Enter the configured password to access the dashboard
 
 ## Available Scripts
 

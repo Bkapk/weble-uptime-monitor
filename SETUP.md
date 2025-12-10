@@ -34,10 +34,11 @@
 5. Replace `<password>` with your actual password
 6. Replace `<dbname>` with `weble_uptime`
 
-Example:
+Example format:
 ```
-mongodb+srv://myuser:mypassword@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
+mongodb+srv://YOUR_USERNAME:YOUR_PASSWORD@YOUR_CLUSTER.mongodb.net/?retryWrites=true&w=majority
 ```
+Replace YOUR_USERNAME, YOUR_PASSWORD, and YOUR_CLUSTER with your actual values.
 
 ## Local Development
 
@@ -48,9 +49,10 @@ npm install
 
 2. Create `.env` file in the project root:
 ```bash
-MONGODB_URI=your_connection_string_here
+MONGODB_URI=your_actual_mongodb_connection_string
 PORT=3001
 ```
+Paste your actual MongoDB connection string from Atlas.
 
 3. Start the backend:
 ```bash
@@ -63,7 +65,7 @@ npm run dev
 ```
 
 5. Open browser: http://localhost:3000
-   - Password: `Weble2024.`
+   - Use the configured password to access
 
 ## Deployment Options
 
@@ -101,6 +103,6 @@ After setup, check the console when starting the server:
 
 - Check interval: 3600 seconds (1 hour)
 - Max history points: 30
-- Password: `Weble2024.`
+- Authentication: Password protected (see App.tsx for configuration)
 - Cookie expiration: 7 days
 

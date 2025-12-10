@@ -1,4 +1,5 @@
 const { connectToDatabase } = require('../../db');
+const { sendSlackNotification } = require('../../utils/slack');
 
 async function checkMonitor(monitor) {
   const start = performance.now();
@@ -51,6 +52,7 @@ module.exports = async (req, res) => {
       return res.status(404).json({ error: 'Monitor not found' });
     }
     
+    const oldStatus = monitor.status; // Store old status to detect changes
     const result = await checkMonitor(monitor);
     
     // Parse existing history - handle both array and JSON string
@@ -82,6 +84,15 @@ module.exports = async (req, res) => {
         history: history
       }
     });
+    
+    // Send Slack notification if status changed (skip PENDING status)
+    if (oldStatus !== result.status && oldStatus !== 'PENDING' && oldStatus !== 'PAUSED') {
+      await sendSlackNotification({
+        ...updated,
+        name: monitor.name,
+        url: monitor.url
+      }, result.status);
+    }
     
     // Transform response to match frontend types
     const transformed = {

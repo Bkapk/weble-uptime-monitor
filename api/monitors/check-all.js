@@ -1,4 +1,5 @@
 const { connectToDatabase } = require('../db');
+const { sendSlackNotification } = require('../utils/slack');
 
 async function checkMonitor(monitor) {
   const start = performance.now();
@@ -59,6 +60,7 @@ module.exports = async (req, res) => {
       // Check batch in parallel
       await Promise.all(batch.map(async (monitor) => {
         try {
+          const oldStatus = monitor.status; // Store old status to detect changes
           const result = await checkMonitor(monitor);
           
           // Parse existing history - handle both array and JSON string
@@ -80,7 +82,7 @@ module.exports = async (req, res) => {
             history.shift();
           }
           
-          await prisma.monitor.update({
+          const updated = await prisma.monitor.update({
             where: { id: monitor.id },
             data: {
               status: result.status,
@@ -90,6 +92,15 @@ module.exports = async (req, res) => {
               history: history
             }
           });
+          
+          // Send Slack notification if status changed (skip PENDING status)
+          if (oldStatus !== result.status && oldStatus !== 'PENDING' && oldStatus !== 'PAUSED') {
+            await sendSlackNotification({
+              ...updated,
+              name: monitor.name,
+              url: monitor.url
+            }, result.status);
+          }
           
           checkedCount++;
         } catch (err) {

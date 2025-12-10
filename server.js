@@ -19,8 +19,20 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'dist')));
 
+// Fallback in-memory storage when MongoDB is not available
+let inMemoryMonitors = [];
+
 // --- Database Connection ---
 async function connectDB() {
+  // Skip MongoDB if no connection string provided
+  if (!MONGODB_URI || MONGODB_URI === 'mongodb://localhost:27017') {
+    console.log('⚠️  No MongoDB connection string provided.');
+    console.log('⚠️  Using IN-MEMORY storage (data will be lost on restart).');
+    console.log('📝 To enable persistent storage, set MONGODB_URI environment variable.');
+    console.log('📚 See SETUP.md for MongoDB setup instructions.');
+    return false;
+  }
+
   try {
     const client = new MongoClient(MONGODB_URI, {
       serverApi: {
@@ -38,27 +50,41 @@ async function connectDB() {
     await monitorsCollection.createIndex({ id: 1 }, { unique: true });
     
     console.log('✅ Connected to MongoDB successfully');
+    console.log('💾 Data will persist permanently');
     return true;
   } catch (err) {
     console.error('❌ Failed to connect to MongoDB:', err.message);
-    console.log('⚠️  Running without persistent storage. Data will be lost on restart.');
+    console.log('⚠️  Falling back to IN-MEMORY storage.');
+    console.log('📝 Data will be lost on restart. Set MONGODB_URI to enable persistence.');
     return false;
   }
 }
 
 // --- Database Operations ---
 async function getAllMonitors() {
-  if (!monitorsCollection) return [];
+  if (!monitorsCollection) {
+    // Fallback to in-memory storage
+    return inMemoryMonitors;
+  }
   try {
     return await monitorsCollection.find({}).toArray();
   } catch (err) {
     console.error('Error fetching monitors:', err);
-    return [];
+    return inMemoryMonitors;
   }
 }
 
 async function saveMonitor(monitor) {
-  if (!monitorsCollection) return;
+  if (!monitorsCollection) {
+    // Fallback to in-memory storage
+    const index = inMemoryMonitors.findIndex(m => m.id === monitor.id);
+    if (index >= 0) {
+      inMemoryMonitors[index] = monitor;
+    } else {
+      inMemoryMonitors.push(monitor);
+    }
+    return;
+  }
   try {
     await monitorsCollection.updateOne(
       { id: monitor.id },
@@ -71,7 +97,11 @@ async function saveMonitor(monitor) {
 }
 
 async function deleteMonitorById(id) {
-  if (!monitorsCollection) return;
+  if (!monitorsCollection) {
+    // Fallback to in-memory storage
+    inMemoryMonitors = inMemoryMonitors.filter(m => m.id !== id);
+    return;
+  }
   try {
     await monitorsCollection.deleteOne({ id });
   } catch (err) {

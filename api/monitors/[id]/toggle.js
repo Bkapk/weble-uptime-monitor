@@ -12,8 +12,6 @@ module.exports = async (req, res) => {
 
   try {
     const { id } = req.query;
-    console.log(`⏸️  PATCH /api/monitors/${id}/toggle`);
-    
     const prisma = await connectToDatabase();
     
     const monitor = await prisma.monitor.findUnique({ where: { id } });
@@ -29,8 +27,6 @@ module.exports = async (req, res) => {
       }
     });
     
-    console.log(`✅ Toggled monitor: ${id} - isPaused: ${updated.isPaused}`);
-    
     // Transform response to match frontend types
     const transformed = {
       ...updated,
@@ -40,7 +36,7 @@ module.exports = async (req, res) => {
     
     return res.status(200).json(transformed);
   } catch (error) {
-    console.error('❌ Error in toggle-monitor:', error.message);
+    console.error('Error in toggle-monitor:', error.message);
     return res.status(500).json({ error: 'Failed to toggle monitor' });
   }
 };
